@@ -30,6 +30,50 @@ CREATE TABLE IF NOT EXISTS `admin_remember_tokens` (
   CONSTRAINT `fk_admin_remember_tokens_admin_id` FOREIGN KEY (`admin_id`) REFERENCES `admins` (`id`) ON UPDATE CASCADE ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE IF NOT EXISTS `accounts` (
+  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `account_name` VARCHAR(120) NOT NULL,
+  `account_type` ENUM('easypaisa','jazzcash','bank','cash') NOT NULL,
+  `account_number` VARCHAR(80) NULL,
+  `status` ENUM('active','inactive') NOT NULL DEFAULT 'active',
+  `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_accounts_name` (`account_name`),
+  KEY `idx_accounts_type` (`account_type`),
+  KEY `idx_accounts_status` (`status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `wallet_transactions` (
+  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `account_id` BIGINT UNSIGNED NOT NULL,
+  `date` DATE NOT NULL,
+  `customer_name` VARCHAR(120) NULL,
+  `number` VARCHAR(50) NULL,
+  `transaction_id` VARCHAR(120) NULL,
+  `type` ENUM('opening','receiving','sending') NOT NULL,
+  `amount` DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+  `charges` DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+  `remarks` VARCHAR(255) NULL,
+  `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_wallet_date` (`date`),
+  KEY `idx_wallet_account` (`account_id`),
+  KEY `idx_wallet_type` (`type`),
+  KEY `idx_wallet_number` (`number`),
+  KEY `idx_wallet_transaction_id` (`transaction_id`),
+  CONSTRAINT `fk_wallet_account` FOREIGN KEY (`account_id`) REFERENCES `accounts` (`id`) ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `shop_settings` (
+  `id` TINYINT UNSIGNED NOT NULL,
+  `company_name` VARCHAR(150) NOT NULL DEFAULT '',
+  `phone` VARCHAR(50) NOT NULL DEFAULT '',
+  `address` VARCHAR(255) NOT NULL DEFAULT '',
+  `logo_path` VARCHAR(255) NULL,
+  `updated_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE IF NOT EXISTS `load_networks` (
   `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
   `network_name` VARCHAR(50) NOT NULL,
