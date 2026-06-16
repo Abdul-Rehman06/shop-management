@@ -3,8 +3,17 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/../auth/auth_check.php';
+require_once __DIR__ . '/wallet.php';
+
+if (file_exists(__DIR__ . '/../vendor/autoload.php')) {
+    require_once __DIR__ . '/../vendor/autoload.php';
+} elseif (file_exists(__DIR__ . '/../../vendor/autoload.php')) {
+    require_once __DIR__ . '/../../vendor/autoload.php';
+}
 
 app_require_auth();
+$pdo = db();
+wallet_ensure_schema($pdo);
 
 function h(string $value): string
 {

@@ -15,17 +15,11 @@ function isActive(string $path, string $currentPath): string {
             <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors <?= isActive('dashboard/index.php', $currentPath) ?>" href="<?= h(app_url('dashboard/index.php')) ?>">
                 <i data-lucide="layout-dashboard" class="w-5 h-5"></i> Dashboard
             </a>
+            <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors <?= isActive('mobile-accounts', $currentPath) ?>" href="<?= h(app_url('mobile-accounts/index.php')) ?>">
+                <i data-lucide="wallet-cards" class="w-5 h-5"></i> Mobile Accounts
+            </a>
             <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors <?= isActive('load-management', $currentPath) ?>" href="<?= h(app_url('load-management/index.php')) ?>">
                 <i data-lucide="smartphone" class="w-5 h-5"></i> Load Management
-            </a>
-            <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors <?= isActive('easypaisa', $currentPath) ?>" href="<?= h(app_url('easypaisa/index.php')) ?>">
-                <i data-lucide="wallet" class="w-5 h-5"></i> EasyPaisa
-            </a>
-            <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors <?= isActive('jazzcash', $currentPath) ?>" href="<?= h(app_url('jazzcash/index.php')) ?>">
-                <i data-lucide="circle-dollar-sign" class="w-5 h-5"></i> JazzCash
-            </a>
-            <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors <?= isActive('bank-transfer', $currentPath) ?>" href="<?= h(app_url('bank-transfer/index.php')) ?>">
-                <i data-lucide="building-2" class="w-5 h-5"></i> Bank Transfer
             </a>
             <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors <?= isActive('expenses', $currentPath) ?>" href="<?= h(app_url('expenses/index.php')) ?>">
                 <i data-lucide="receipt" class="w-5 h-5"></i> Expenses

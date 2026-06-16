@@ -19,6 +19,16 @@ require_once __DIR__ . '/../includes/sidebar.php';
     <div class="col-12 col-md-6 col-lg-4">
         <div class="card border-0 shadow-sm">
             <div class="card-body">
+                <div class="fw-semibold mb-1">Accounts</div>
+                <div class="text-muted small mb-3">Add, edit, delete EasyPaisa/JazzCash/Bank accounts</div>
+                <a class="btn btn-primary btn-sm" href="<?= h(app_url('settings/accounts.php')) ?>">Open</a>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-12 col-md-6 col-lg-4">
+        <div class="card border-0 shadow-sm">
+            <div class="card-body">
                 <div class="fw-semibold mb-1">Change Password</div>
                 <div class="text-muted small mb-3">Update admin password</div>
                 <a class="btn btn-primary btn-sm" href="<?= h(app_url('settings/change_password.php')) ?>">Open</a>
@@ -58,4 +68,3 @@ require_once __DIR__ . '/../includes/sidebar.php';
 </div>
 
 <?php require_once __DIR__ . '/../includes/footer.php'; ?>
-

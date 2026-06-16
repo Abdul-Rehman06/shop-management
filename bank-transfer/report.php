@@ -8,39 +8,71 @@ require_once __DIR__ . '/bank_lib.php';
 $pageTitle = 'Bank Transfer Reports - Shop Management';
 
 $pdo = db();
+$accounts = wallet_accounts($pdo, 'bank');
 
 $from = (string) ($_GET['from'] ?? date('Y-m-d'));
 $to = (string) ($_GET['to'] ?? date('Y-m-d'));
 $type = trim((string) ($_GET['type'] ?? ''));
+$accountId = (int) ($_GET['account_id'] ?? 0);
+
+$validAccount = false;
+foreach ($accounts as $a) {
+    if ((int) $a['id'] === $accountId) {
+        $validAccount = true;
+        break;
+    }
+}
+if (!$validAccount) {
+    $accountId = 0;
+}
 
 $params = [
     ':from' => $from,
     ':to' => $to,
+    ':account_type' => 'bank',
 ];
 
-$where = 'WHERE date >= :from AND date <= :to';
+$where = 'WHERE wt.date >= :from AND wt.date <= :to AND a.account_type = :account_type';
+if ($accountId > 0) {
+    $where .= ' AND wt.account_id = :account_id';
+    $params[':account_id'] = $accountId;
+}
 if ($type !== '') {
     $where .= ' AND type = :type';
     $params[':type'] = $type;
 }
 
 $stmt = $pdo->prepare("
-    SELECT id, date, bank_name, account_number, transaction_id, type, amount, charges, remarks
-    FROM bank_transactions
+    SELECT wt.id, wt.date, wt.transaction_id, wt.type, wt.amount, wt.charges, wt.remarks, a.account_name, a.account_number
+    FROM wallet_transactions wt
+    JOIN accounts a ON a.id = wt.account_id
     {$where}
-    ORDER BY date ASC, id ASC
+    ORDER BY wt.date ASC, wt.id ASC
 ");
 $stmt->execute($params);
 $rows = $stmt->fetchAll();
 
-$totals = bank_totals($pdo, $from, $to);
-if ($type === 'receiving') {
-    $totals['sent'] = 0.0;
-    $totals['net'] = $totals['received'];
-} elseif ($type === 'sending') {
-    $totals['received'] = 0.0;
-    $totals['net'] = 0.0 - $totals['sent'];
-}
+$stmt = $pdo->prepare("
+    SELECT
+        COALESCE(SUM(CASE WHEN wt.type='receiving' THEN wt.amount ELSE 0 END), 0) AS total_received,
+        COALESCE(SUM(CASE WHEN wt.type='sending' THEN wt.amount ELSE 0 END), 0) AS total_sent,
+        COALESCE(SUM(wt.charges), 0) AS total_charges
+    FROM wallet_transactions wt
+    JOIN accounts a ON a.id = wt.account_id
+    {$where}
+");
+$stmt->execute($params);
+$t = $stmt->fetch() ?: [];
+$received = (float) ($t['total_received'] ?? 0);
+$sent = (float) ($t['total_sent'] ?? 0);
+$charges = (float) ($t['total_charges'] ?? 0);
+$totals = [
+    'received' => $received,
+    'sent' => $sent,
+    'charges' => $charges,
+    'net' => $received - $sent,
+];
+$closing = $totals['net'];
 
 require_once __DIR__ . '/../includes/header.php';
 require_once __DIR__ . '/../includes/sidebar.php';
@@ -55,6 +87,17 @@ require_once __DIR__ . '/../includes/sidebar.php';
 <div class="card border-0 shadow-sm mb-3">
     <div class="card-body">
         <form method="get" class="row g-3 align-items-end">
+            <div class="col-12 col-md-4">
+                <label class="form-label" for="account_id">Account</label>
+                <select class="form-select" id="account_id" name="account_id">
+                    <option value="0">All Accounts</option>
+                    <?php foreach ($accounts as $a): ?>
+                        <option value="<?= h((string) (int) $a['id']) ?>" <?= (int) $a['id'] === $accountId ? 'selected' : '' ?>>
+                            <?= h((string) $a['account_name']) ?>
+                        </option>
+                    <?php endforeach; ?>
+                </select>
+            </div>
             <div class="col-12 col-md-4">
                 <label class="form-label" for="from">From</label>
                 <input class="form-control" type="date" id="from" name="from" value="<?= h($from) ?>" required>
@@ -98,8 +141,8 @@ require_once __DIR__ . '/../includes/sidebar.php';
     <div class="col-12 col-md-3">
         <div class="card border-0 shadow-sm">
             <div class="card-body">
-                <div class="text-muted small">Net</div>
-                <div class="h5 mb-0"><?= h(number_format($totals['net'], 2)) ?></div>
+                <div class="text-muted small">Closing Balance</div>
+                <div class="h5 mb-0"><?= h(number_format($closing, 2)) ?></div>
             </div>
         </div>
     </div>
@@ -131,13 +174,21 @@ require_once __DIR__ . '/../includes/sidebar.php';
                 </thead>
                 <tbody>
                 <?php foreach ($rows as $r): ?>
+                    <?php
+                    $amountStyle = '';
+                    if (($r['type'] ?? '') === 'receiving') {
+                        $amountStyle = 'color:#16a34a;font-weight:600;';
+                    } elseif (($r['type'] ?? '') === 'sending') {
+                        $amountStyle = 'color:#dc2626;font-weight:600;';
+                    }
+                    ?>
                     <tr>
                         <td><?= h((string) $r['date']) ?></td>
                         <td><?= h((string) $r['type']) ?></td>
-                        <td><?= h((string) $r['bank_name']) ?></td>
-                        <td><?= h((string) $r['account_number']) ?></td>
+                        <td><?= h((string) ($r['account_name'] ?? '')) ?></td>
+                        <td><?= h((string) ($r['account_number'] ?? '')) ?></td>
                         <td><?= h((string) ($r['transaction_id'] ?? '')) ?></td>
-                        <td class="text-end"><?= h(number_format((float) $r['amount'], 2)) ?></td>
+                        <td class="text-end" style="<?= h($amountStyle) ?>"><?= h(number_format((float) $r['amount'], 2)) ?></td>
                         <td class="text-end"><?= h(number_format((float) $r['charges'], 2)) ?></td>
                         <td><?= h((string) ($r['remarks'] ?? '')) ?></td>
                     </tr>
@@ -154,4 +205,3 @@ require_once __DIR__ . '/../includes/sidebar.php';
 </div>
 
 <?php require_once __DIR__ . '/../includes/footer.php'; ?>
-

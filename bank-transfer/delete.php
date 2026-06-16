@@ -19,10 +19,10 @@ if (!$row) {
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $stmt = $pdo->prepare('DELETE FROM bank_transactions WHERE id = :id');
+    $stmt = $pdo->prepare('DELETE FROM wallet_transactions WHERE id = :id');
     $stmt->execute([':id' => $id]);
     flash_set('success', 'Transaction deleted successfully.');
-    app_redirect('bank-transfer/index.php');
+    app_redirect('bank-transfer/index.php?account_id=' . (int) ($row['account_id'] ?? 0));
 }
 
 $pageTitle = 'Delete Bank Transaction - Shop Management';
@@ -34,7 +34,7 @@ require_once __DIR__ . '/../includes/sidebar.php';
 
 <div class="d-flex align-items-center justify-content-between mb-3">
     <h1 class="h4 mb-0">Delete Bank Transaction</h1>
-    <a class="btn btn-outline-secondary btn-sm" href="<?= h(app_url('bank-transfer/index.php')) ?>">Back</a>
+    <a class="btn btn-outline-secondary btn-sm" href="<?= h(app_url('bank-transfer/index.php?account_id=' . (int) ($row['account_id'] ?? 0))) ?>">Back</a>
 </div>
 
 <div class="alert alert-warning">
@@ -46,7 +46,7 @@ require_once __DIR__ . '/../includes/sidebar.php';
         <div class="row g-2">
             <div class="col-12 col-md-3"><span class="text-muted">Date:</span> <?= h((string) $row['date']) ?></div>
             <div class="col-12 col-md-3"><span class="text-muted">Type:</span> <?= h((string) $row['type']) ?></div>
-            <div class="col-12 col-md-3"><span class="text-muted">Bank:</span> <?= h((string) $row['bank_name']) ?></div>
+            <div class="col-12 col-md-3"><span class="text-muted">Bank:</span> <?= h((string) ($row['account_name'] ?? '')) ?></div>
             <div class="col-12 col-md-3"><span class="text-muted">Amount:</span> <?= h(number_format((float) $row['amount'], 2)) ?></div>
         </div>
     </div>
@@ -54,8 +54,7 @@ require_once __DIR__ . '/../includes/sidebar.php';
 
 <form method="post">
     <button class="btn btn-danger">Yes, delete</button>
-    <a class="btn btn-outline-secondary" href="<?= h(app_url('bank-transfer/index.php')) ?>">Cancel</a>
+    <a class="btn btn-outline-secondary" href="<?= h(app_url('bank-transfer/index.php?account_id=' . (int) ($row['account_id'] ?? 0))) ?>">Cancel</a>
 </form>
 
 <?php require_once __DIR__ . '/../includes/footer.php'; ?>
-

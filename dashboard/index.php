@@ -13,6 +13,8 @@ $pdo = db();
 
 $networks = ['Jazz', 'Zong', 'Ufone', 'Telenor'];
 
+$walletAll = wallet_combined_summary($pdo, null, true);
+
 $loadBalances = array_fill_keys($networks, 0.0);
 $stmt = $pdo->query("
     SELECT t.network, t.closing_balance
@@ -34,18 +36,42 @@ foreach ($stmt->fetchAll() as $row) {
 $loadTotalBalance = array_sum($loadBalances);
 
 $easypaisaNet = (float) $pdo->query("
-    SELECT COALESCE(SUM(CASE WHEN type='receiving' THEN amount ELSE -amount END), 0)
-    FROM easypaisa_transactions
+    SELECT COALESCE(SUM(
+        CASE
+            WHEN wt.type IN ('opening', 'receiving') THEN wt.amount
+            WHEN wt.type = 'sending' THEN -wt.amount
+            ELSE 0
+        END
+    ), 0)
+    FROM wallet_transactions wt
+    JOIN accounts a ON a.id = wt.account_id
+    WHERE a.account_type = 'easypaisa'
 ")->fetchColumn();
 
 $jazzcashNet = (float) $pdo->query("
-    SELECT COALESCE(SUM(CASE WHEN type='receiving' THEN amount ELSE -amount END), 0)
-    FROM jazzcash_transactions
+    SELECT COALESCE(SUM(
+        CASE
+            WHEN wt.type IN ('opening', 'receiving') THEN wt.amount
+            WHEN wt.type = 'sending' THEN -wt.amount
+            ELSE 0
+        END
+    ), 0)
+    FROM wallet_transactions wt
+    JOIN accounts a ON a.id = wt.account_id
+    WHERE a.account_type = 'jazzcash'
 ")->fetchColumn();
 
 $bankNet = (float) $pdo->query("
-    SELECT COALESCE(SUM(CASE WHEN type='receiving' THEN amount ELSE -amount END), 0)
-    FROM bank_transactions
+    SELECT COALESCE(SUM(
+        CASE
+            WHEN wt.type IN ('opening', 'receiving') THEN wt.amount
+            WHEN wt.type = 'sending' THEN -wt.amount
+            ELSE 0
+        END
+    ), 0)
+    FROM wallet_transactions wt
+    JOIN accounts a ON a.id = wt.account_id
+    WHERE a.account_type = 'bank'
 ")->fetchColumn();
 
 $todayExpense = (float) $pdo->query("
@@ -143,6 +169,52 @@ $extraHead = '<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/char
             <a href="<?= h(app_url('sales/add.php')) ?>" class="btn btn-primary shadow-md hover:shadow-lg">
                 <i data-lucide="shopping-cart" class="w-4 h-4"></i> New Sale
             </a>
+        </div>
+    </div>
+</div>
+
+<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+    <div class="glass-card rounded-2xl p-6 relative overflow-hidden group hover:-translate-y-1 transition-all duration-300">
+        <div class="absolute -right-6 -top-6 w-24 h-24 bg-gray-50 rounded-full group-hover:scale-150 transition-transform duration-500 ease-out z-0"></div>
+        <div class="relative z-10">
+            <div class="flex items-center justify-between mb-4">
+                <div class="text-sm font-semibold text-gray-500 uppercase tracking-wider">Total Opening</div>
+                <div class="p-2 bg-gray-100 text-gray-700 rounded-lg"><i data-lucide="layers" class="w-5 h-5"></i></div>
+            </div>
+            <div class="text-3xl font-bold text-gray-900 tracking-tight">Rs <?= money((float) ($walletAll['opening'] ?? 0)) ?></div>
+        </div>
+    </div>
+
+    <div class="glass-card rounded-2xl p-6 relative overflow-hidden group hover:-translate-y-1 transition-all duration-300">
+        <div class="absolute -right-6 -top-6 w-24 h-24 bg-emerald-50 rounded-full group-hover:scale-150 transition-transform duration-500 ease-out z-0"></div>
+        <div class="relative z-10">
+            <div class="flex items-center justify-between mb-4">
+                <div class="text-sm font-semibold text-gray-500 uppercase tracking-wider">Total Receiving</div>
+                <div class="p-2 bg-emerald-100 text-emerald-600 rounded-lg"><i data-lucide="arrow-down-left" class="w-5 h-5"></i></div>
+            </div>
+            <div class="text-3xl font-bold text-gray-900 tracking-tight">Rs <?= money((float) ($walletAll['receiving'] ?? 0)) ?></div>
+        </div>
+    </div>
+
+    <div class="glass-card rounded-2xl p-6 relative overflow-hidden group hover:-translate-y-1 transition-all duration-300">
+        <div class="absolute -right-6 -top-6 w-24 h-24 bg-red-50 rounded-full group-hover:scale-150 transition-transform duration-500 ease-out z-0"></div>
+        <div class="relative z-10">
+            <div class="flex items-center justify-between mb-4">
+                <div class="text-sm font-semibold text-gray-500 uppercase tracking-wider">Total Sending</div>
+                <div class="p-2 bg-red-100 text-red-600 rounded-lg"><i data-lucide="arrow-up-right" class="w-5 h-5"></i></div>
+            </div>
+            <div class="text-3xl font-bold text-gray-900 tracking-tight">Rs <?= money((float) ($walletAll['sending'] ?? 0)) ?></div>
+        </div>
+    </div>
+
+    <div class="glass-card rounded-2xl p-6 relative overflow-hidden group hover:-translate-y-1 transition-all duration-300">
+        <div class="absolute -right-6 -top-6 w-24 h-24 bg-brand-50 rounded-full group-hover:scale-150 transition-transform duration-500 ease-out z-0"></div>
+        <div class="relative z-10">
+            <div class="flex items-center justify-between mb-4">
+                <div class="text-sm font-semibold text-gray-500 uppercase tracking-wider">Total Closing</div>
+                <div class="p-2 bg-brand-100 text-brand-600 rounded-lg"><i data-lucide="wallet" class="w-5 h-5"></i></div>
+            </div>
+            <div class="text-3xl font-bold text-gray-900 tracking-tight">Rs <?= money((float) ($walletAll['closing'] ?? 0)) ?></div>
         </div>
     </div>
 </div>

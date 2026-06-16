@@ -19,10 +19,10 @@ if (!$row) {
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $stmt = $pdo->prepare('DELETE FROM jazzcash_transactions WHERE id = :id');
+    $stmt = $pdo->prepare('DELETE FROM wallet_transactions WHERE id = :id');
     $stmt->execute([':id' => $id]);
     flash_set('success', 'Transaction deleted successfully.');
-    app_redirect('jazzcash/index.php');
+    app_redirect('jazzcash/index.php?account_id=' . (int) ($row['account_id'] ?? 0));
 }
 
 $pageTitle = 'Delete JazzCash Transaction - Shop Management';
@@ -34,7 +34,7 @@ require_once __DIR__ . '/../includes/sidebar.php';
 
 <div class="d-flex align-items-center justify-content-between mb-3">
     <h1 class="h4 mb-0">Delete JazzCash Transaction</h1>
-    <a class="btn btn-outline-secondary btn-sm" href="<?= h(app_url('jazzcash/index.php')) ?>">Back</a>
+    <a class="btn btn-outline-secondary btn-sm" href="<?= h(app_url('jazzcash/index.php?account_id=' . (int) ($row['account_id'] ?? 0))) ?>">Back</a>
 </div>
 
 <div class="alert alert-warning">
@@ -58,4 +58,3 @@ require_once __DIR__ . '/../includes/sidebar.php';
 </form>
 
 <?php require_once __DIR__ . '/../includes/footer.php'; ?>
-

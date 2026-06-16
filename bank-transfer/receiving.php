@@ -7,46 +7,61 @@ require_once __DIR__ . '/../includes/app.php';
 $pageTitle = 'Bank Transfer - Money Received';
 
 $pdo = db();
+$accounts = wallet_accounts($pdo, 'bank');
 
 $date = date('Y-m-d');
-$bankName = '';
-$accountNumber = '';
 $transactionId = '';
 $amount = '';
 $charges = '';
 $remarks = '';
 $error = '';
+$accountId = (int) ($_GET['account_id'] ?? ($_POST['account_id'] ?? ($accounts[0]['id'] ?? 0)));
+
+$validAccount = false;
+foreach ($accounts as $a) {
+    if ((int) $a['id'] === $accountId) {
+        $validAccount = true;
+        break;
+    }
+}
+if (!$validAccount) {
+    $accountId = (int) ($accounts[0]['id'] ?? 0);
+}
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $accountId = (int) ($_POST['account_id'] ?? 0);
     $date = trim((string) ($_POST['date'] ?? ''));
-    $bankName = trim((string) ($_POST['bank_name'] ?? ''));
-    $accountNumber = trim((string) ($_POST['account_number'] ?? ''));
     $transactionId = trim((string) ($_POST['transaction_id'] ?? ''));
     $amount = trim((string) ($_POST['amount'] ?? ''));
     $charges = trim((string) ($_POST['charges'] ?? ''));
     $remarks = trim((string) ($_POST['remarks'] ?? ''));
 
-    if ($date === '') {
+    $validAccount = false;
+    foreach ($accounts as $a) {
+        if ((int) $a['id'] === $accountId) {
+            $validAccount = true;
+            break;
+        }
+    }
+
+    if (!$validAccount) {
+        $error = 'Please select a valid account.';
+    } elseif ($date === '') {
         $error = 'Date is required.';
-    } elseif ($bankName === '') {
-        $error = 'Bank name is required.';
-    } elseif ($accountNumber === '') {
-        $error = 'Account number is required.';
     } elseif ($amount === '' || !is_numeric($amount)) {
         $error = 'Amount must be a number.';
     } elseif ($charges !== '' && !is_numeric($charges)) {
         $error = 'Charges must be a number.';
     } else {
         $stmt = $pdo->prepare('
-            INSERT INTO bank_transactions
-                (date, bank_name, account_number, transaction_id, type, amount, charges, remarks)
+            INSERT INTO wallet_transactions
+                (account_id, date, transaction_id, type, amount, charges, remarks)
             VALUES
-                (:date, :bank_name, :account_number, :transaction_id, :type, :amount, :charges, :remarks)
+                (:account_id, :date, :transaction_id, :type, :amount, :charges, :remarks)
         ');
         $stmt->execute([
+            ':account_id' => $accountId,
             ':date' => $date,
-            ':bank_name' => $bankName,
-            ':account_number' => $accountNumber,
             ':transaction_id' => $transactionId !== '' ? $transactionId : null,
             ':type' => 'receiving',
             ':amount' => (float) $amount,
@@ -55,7 +70,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         ]);
 
         flash_set('success', 'Bank receiving transaction added successfully.');
-        app_redirect('bank-transfer/index.php');
+        app_redirect('bank-transfer/index.php?account_id=' . $accountId);
     }
 }
 
@@ -66,7 +81,7 @@ require_once __DIR__ . '/../includes/sidebar.php';
 
 <div class="d-flex align-items-center justify-content-between mb-3">
     <h1 class="h4 mb-0">Money Received</h1>
-    <a class="btn btn-outline-secondary btn-sm" href="<?= h(app_url('bank-transfer/index.php')) ?>">Back</a>
+    <a class="btn btn-outline-secondary btn-sm" href="<?= h(app_url('bank-transfer/index.php?account_id=' . $accountId)) ?>">Back</a>
 </div>
 
 <?php if ($error !== ''): ?>
@@ -78,16 +93,18 @@ require_once __DIR__ . '/../includes/sidebar.php';
         <form method="post">
             <div class="row g-3">
                 <div class="col-12 col-md-3">
+                    <label class="form-label" for="account_id">Account</label>
+                    <select class="form-select" id="account_id" name="account_id" required>
+                        <?php foreach ($accounts as $a): ?>
+                            <option value="<?= h((string) (int) $a['id']) ?>" <?= (int) $a['id'] === $accountId ? 'selected' : '' ?>>
+                                <?= h((string) $a['account_name']) ?>
+                            </option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+                <div class="col-12 col-md-3">
                     <label class="form-label" for="date">Date</label>
                     <input class="form-control" type="date" id="date" name="date" value="<?= h($date) ?>" required>
-                </div>
-                <div class="col-12 col-md-3">
-                    <label class="form-label" for="bank_name">Bank Name</label>
-                    <input class="form-control" type="text" id="bank_name" name="bank_name" value="<?= h($bankName) ?>" required>
-                </div>
-                <div class="col-12 col-md-3">
-                    <label class="form-label" for="account_number">Account Number</label>
-                    <input class="form-control" type="text" id="account_number" name="account_number" value="<?= h($accountNumber) ?>" required>
                 </div>
                 <div class="col-12 col-md-3">
                     <label class="form-label" for="transaction_id">Transaction ID</label>
@@ -115,4 +132,3 @@ require_once __DIR__ . '/../includes/sidebar.php';
 </div>
 
 <?php require_once __DIR__ . '/../includes/footer.php'; ?>
-

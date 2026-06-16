@@ -19,10 +19,10 @@ if (!$row) {
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $stmt = $pdo->prepare('DELETE FROM easypaisa_transactions WHERE id = :id');
+    $stmt = $pdo->prepare('DELETE FROM wallet_transactions WHERE id = :id');
     $stmt->execute([':id' => $id]);
     flash_set('success', 'Transaction deleted successfully.');
-    app_redirect('easypaisa/index.php');
+    app_redirect('easypaisa/index.php?account_id=' . (int) ($row['account_id'] ?? 0));
 }
 
 $pageTitle = 'Delete EasyPaisa Transaction - Shop Management';
@@ -34,7 +34,7 @@ require_once __DIR__ . '/../includes/sidebar.php';
 
 <div class="d-flex align-items-center justify-content-between mb-3">
     <h1 class="h4 mb-0">Delete EasyPaisa Transaction</h1>
-    <a class="btn btn-outline-secondary btn-sm" href="<?= h(app_url('easypaisa/index.php')) ?>">Back</a>
+    <a class="btn btn-outline-secondary btn-sm" href="<?= h(app_url('easypaisa/index.php?account_id=' . (int) ($row['account_id'] ?? 0))) ?>">Back</a>
 </div>
 
 <div class="alert alert-warning">
@@ -58,4 +58,3 @@ require_once __DIR__ . '/../includes/sidebar.php';
 </form>
 
 <?php require_once __DIR__ . '/../includes/footer.php'; ?>
-

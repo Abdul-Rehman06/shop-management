@@ -7,6 +7,7 @@ require_once __DIR__ . '/../includes/app.php';
 $pageTitle = 'JazzCash Sending - Shop Management';
 
 $pdo = db();
+$accounts = wallet_accounts($pdo, 'jazzcash');
 
 $date = date('Y-m-d');
 $customerName = '';
@@ -16,8 +17,21 @@ $amount = '';
 $charges = '';
 $remarks = '';
 $error = '';
+$accountId = (int) ($_GET['account_id'] ?? ($_POST['account_id'] ?? ($accounts[0]['id'] ?? 0)));
+
+$validAccount = false;
+foreach ($accounts as $a) {
+    if ((int) $a['id'] === $accountId) {
+        $validAccount = true;
+        break;
+    }
+}
+if (!$validAccount) {
+    $accountId = (int) ($accounts[0]['id'] ?? 0);
+}
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $accountId = (int) ($_POST['account_id'] ?? 0);
     $date = trim((string) ($_POST['date'] ?? ''));
     $customerName = trim((string) ($_POST['customer_name'] ?? ''));
     $number = trim((string) ($_POST['number'] ?? ''));
@@ -26,7 +40,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $charges = trim((string) ($_POST['charges'] ?? ''));
     $remarks = trim((string) ($_POST['remarks'] ?? ''));
 
-    if ($date === '') {
+    $validAccount = false;
+    foreach ($accounts as $a) {
+        if ((int) $a['id'] === $accountId) {
+            $validAccount = true;
+            break;
+        }
+    }
+
+    if (!$validAccount) {
+        $error = 'Please select a valid account.';
+    } elseif ($date === '') {
         $error = 'Date is required.';
     } elseif ($number === '') {
         $error = 'Number is required.';
@@ -36,12 +60,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $error = 'Charges must be a number.';
     } else {
         $stmt = $pdo->prepare('
-            INSERT INTO jazzcash_transactions
-                (date, customer_name, number, transaction_id, type, amount, charges, remarks)
+            INSERT INTO wallet_transactions
+                (account_id, date, customer_name, number, transaction_id, type, amount, charges, remarks)
             VALUES
-                (:date, :customer_name, :number, :transaction_id, :type, :amount, :charges, :remarks)
+                (:account_id, :date, :customer_name, :number, :transaction_id, :type, :amount, :charges, :remarks)
         ');
         $stmt->execute([
+            ':account_id' => $accountId,
             ':date' => $date,
             ':customer_name' => $customerName !== '' ? $customerName : null,
             ':number' => $number,
@@ -53,7 +78,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         ]);
 
         flash_set('success', 'Sending transaction added successfully.');
-        app_redirect('jazzcash/index.php');
+        app_redirect('jazzcash/index.php?account_id=' . $accountId);
     }
 }
 
@@ -75,6 +100,16 @@ require_once __DIR__ . '/../includes/sidebar.php';
     <div class="card-body">
         <form method="post">
             <div class="row g-3">
+                <div class="col-12 col-md-4">
+                    <label class="form-label" for="account_id">Account</label>
+                    <select class="form-select" id="account_id" name="account_id" required>
+                        <?php foreach ($accounts as $a): ?>
+                            <option value="<?= h((string) (int) $a['id']) ?>" <?= (int) $a['id'] === $accountId ? 'selected' : '' ?>>
+                                <?= h((string) $a['account_name']) ?>
+                            </option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
                 <div class="col-12 col-md-3">
                     <label class="form-label" for="date">Date</label>
                     <input class="form-control" type="date" id="date" name="date" value="<?= h($date) ?>" required>
@@ -113,4 +148,3 @@ require_once __DIR__ . '/../includes/sidebar.php';
 </div>
 
 <?php require_once __DIR__ . '/../includes/footer.php'; ?>
-

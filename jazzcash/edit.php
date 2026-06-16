@@ -18,10 +18,13 @@ if (!$row) {
     app_redirect('jazzcash/index.php');
 }
 
+$accounts = wallet_accounts($pdo, 'jazzcash');
+$accountId = (int) ($row['account_id'] ?? 0);
+
 $type = (string) $row['type'];
 $date = (string) $row['date'];
 $customerName = (string) ($row['customer_name'] ?? '');
-$number = (string) $row['number'];
+$number = (string) ($row['number'] ?? '');
 $transactionId = (string) ($row['transaction_id'] ?? '');
 $amount = (string) $row['amount'];
 $charges = (string) $row['charges'];
@@ -29,6 +32,7 @@ $remarks = (string) ($row['remarks'] ?? '');
 $error = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $accountId = (int) ($_POST['account_id'] ?? 0);
     $date = trim((string) ($_POST['date'] ?? ''));
     $customerName = trim((string) ($_POST['customer_name'] ?? ''));
     $number = trim((string) ($_POST['number'] ?? ''));
@@ -37,9 +41,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $charges = trim((string) ($_POST['charges'] ?? ''));
     $remarks = trim((string) ($_POST['remarks'] ?? ''));
 
-    if ($date === '') {
+    $validAccount = false;
+    foreach ($accounts as $a) {
+        if ((int) $a['id'] === $accountId) {
+            $validAccount = true;
+            break;
+        }
+    }
+
+    if (!$validAccount) {
+        $error = 'Please select a valid account.';
+    } elseif ($date === '') {
         $error = 'Date is required.';
-    } elseif ($number === '') {
+    } elseif ($type !== 'opening' && $number === '') {
         $error = 'Number is required.';
     } elseif ($amount === '' || !is_numeric($amount)) {
         $error = 'Amount must be a number.';
@@ -47,8 +61,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $error = 'Charges must be a number.';
     } else {
         $stmt = $pdo->prepare('
-            UPDATE jazzcash_transactions
-            SET date = :date,
+            UPDATE wallet_transactions
+            SET account_id = :account_id,
+                date = :date,
                 customer_name = :customer_name,
                 number = :number,
                 transaction_id = :transaction_id,
@@ -58,9 +73,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             WHERE id = :id
         ');
         $stmt->execute([
+            ':account_id' => $accountId,
             ':date' => $date,
             ':customer_name' => $customerName !== '' ? $customerName : null,
-            ':number' => $number,
+            ':number' => $number !== '' ? $number : null,
             ':transaction_id' => $transactionId !== '' ? $transactionId : null,
             ':amount' => (float) $amount,
             ':charges' => $charges === '' ? 0.0 : (float) $charges,
@@ -69,7 +85,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         ]);
 
         flash_set('success', 'Transaction updated successfully.');
-        app_redirect('jazzcash/index.php');
+        app_redirect('jazzcash/index.php?account_id=' . $accountId);
     }
 }
 
@@ -82,7 +98,7 @@ require_once __DIR__ . '/../includes/sidebar.php';
 
 <div class="d-flex align-items-center justify-content-between mb-3">
     <h1 class="h4 mb-0">Edit JazzCash Transaction</h1>
-    <a class="btn btn-outline-secondary btn-sm" href="<?= h(app_url('jazzcash/index.php')) ?>">Back</a>
+    <a class="btn btn-outline-secondary btn-sm" href="<?= h(app_url('jazzcash/index.php?account_id=' . $accountId)) ?>">Back</a>
 </div>
 
 <?php if ($error !== ''): ?>
@@ -93,6 +109,16 @@ require_once __DIR__ . '/../includes/sidebar.php';
     <div class="card-body">
         <form method="post">
             <div class="row g-3">
+                <div class="col-12 col-md-3">
+                    <label class="form-label" for="account_id">Account</label>
+                    <select class="form-select" id="account_id" name="account_id" required>
+                        <?php foreach ($accounts as $a): ?>
+                            <option value="<?= h((string) (int) $a['id']) ?>" <?= (int) $a['id'] === $accountId ? 'selected' : '' ?>>
+                                <?= h((string) $a['account_name']) ?>
+                            </option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
                 <div class="col-12 col-md-3">
                     <label class="form-label" for="date">Date</label>
                     <input class="form-control" type="date" id="date" name="date" value="<?= h($date) ?>" required>
@@ -107,7 +133,7 @@ require_once __DIR__ . '/../includes/sidebar.php';
                 </div>
                 <div class="col-12 col-md-3">
                     <label class="form-label" for="number">Number</label>
-                    <input class="form-control" type="text" id="number" name="number" value="<?= h($number) ?>" required>
+                    <input class="form-control" type="text" id="number" name="number" value="<?= h($number) ?>" <?= $type === 'opening' ? '' : 'required' ?>>
                 </div>
                 <div class="col-12 col-md-3">
                     <label class="form-label" for="transaction_id">Transaction ID</label>
@@ -135,4 +161,3 @@ require_once __DIR__ . '/../includes/sidebar.php';
 </div>
 
 <?php require_once __DIR__ . '/../includes/footer.php'; ?>
-
