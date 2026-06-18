@@ -8,6 +8,7 @@ require_once __DIR__ . '/inv_lib.php';
 $pageTitle = 'Inventory - Shop Management';
 
 $pdo = db();
+app_require_stock_access();
 $success = flash_get('success');
 $error = flash_get('error');
 
@@ -94,4 +95,3 @@ require_once __DIR__ . '/../includes/sidebar.php';
 </div>
 
 <?php require_once __DIR__ . '/../includes/footer.php'; ?>
-

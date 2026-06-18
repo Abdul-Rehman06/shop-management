@@ -25,9 +25,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $error = 'Please enter your password.';
     } else {
         $pdo = db();
-        $stmt = $pdo->prepare('SELECT id, name, email, password FROM admins WHERE email = :email LIMIT 1');
-        $stmt->execute([':email' => $email]);
-        $admin = $stmt->fetch();
+        $admin = null;
+        try {
+            $stmt = $pdo->prepare('SELECT id, name, email, role, password FROM admins WHERE email = :email LIMIT 1');
+            $stmt->execute([':email' => $email]);
+            $admin = $stmt->fetch();
+        } catch (Throwable $e) {
+            $stmt = $pdo->prepare('SELECT id, name, email, password FROM admins WHERE email = :email LIMIT 1');
+            $stmt->execute([':email' => $email]);
+            $admin = $stmt->fetch();
+        }
 
         $isValid = false;
         if ($admin) {

@@ -6,6 +6,7 @@ require_once __DIR__ . '/../includes/app.php';
 require_once __DIR__ . '/exp_lib.php';
 
 $pdo = db();
+app_require_edit_delete_access();
 $id = (int) ($_GET['id'] ?? 0);
 if ($id <= 0) {
     flash_set('error', 'Invalid expense.');
@@ -58,4 +59,3 @@ require_once __DIR__ . '/../includes/sidebar.php';
 </form>
 
 <?php require_once __DIR__ . '/../includes/footer.php'; ?>
-

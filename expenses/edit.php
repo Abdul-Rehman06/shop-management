@@ -6,6 +6,7 @@ require_once __DIR__ . '/../includes/app.php';
 require_once __DIR__ . '/exp_lib.php';
 
 $pdo = db();
+app_require_edit_delete_access();
 $categories = exp_categories();
 
 $id = (int) ($_GET['id'] ?? 0);
@@ -112,4 +113,3 @@ require_once __DIR__ . '/../includes/sidebar.php';
 </div>
 
 <?php require_once __DIR__ . '/../includes/footer.php'; ?>
-

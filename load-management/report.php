@@ -8,7 +8,7 @@ require_once __DIR__ . '/load_lib.php';
 $pageTitle = 'Load Reports - Shop Management';
 
 $pdo = db();
-$pdo = db();
+app_require_owner_access();
 load_ensure_schema($pdo);
 $networks = load_get_networks($pdo);
 

@@ -81,51 +81,49 @@ function report_fetch(PDO $pdo, array $filters): array
             $where .= ' AND network = :network';
             $params[':network'] = $network;
         }
-        if ($type !== '') {
-            $where .= ' AND type = :type';
-            $params[':type'] = $type;
-        }
         $stmt = $pdo->prepare("
-            SELECT date, network, type, opening_balance, purchased, sold, profit, closing_balance, supplier, customer_number, remarks
-            FROM load_transactions
+            SELECT date, network, opening_balance, purchased_balance, sold_balance, profit, closing_balance
+            FROM load_entries
             {$where}
-            ORDER BY date ASC, id ASC
+            ORDER BY date ASC, network ASC
         ");
         $stmt->execute($params);
         $rows = $stmt->fetchAll();
 
         $totals = [
+            'opening' => 0.0,
             'purchased' => 0.0,
             'sold' => 0.0,
             'profit' => 0.0,
+            'closing' => 0.0,
         ];
         foreach ($rows as $r) {
-            $totals['purchased'] += (float) $r['purchased'];
-            $totals['sold'] += (float) $r['sold'];
+            $totals['opening'] += (float) $r['opening_balance'];
+            $totals['purchased'] += (float) $r['purchased_balance'];
+            $totals['sold'] += (float) $r['sold_balance'];
             $totals['profit'] += (float) ($r['profit'] ?? 0);
+            $totals['closing'] += (float) $r['closing_balance'];
         }
 
         return [
-            'headers' => ['Date', 'Network', 'Type', 'Opening', 'Purchased', 'Sold', 'Profit', 'Closing', 'Supplier', 'Customer Number', 'Remarks'],
+            'headers' => ['Date', 'Network', 'Opening', 'Purchased', 'Sold', 'Profit', 'Closing'],
             'rows' => array_map(static function (array $r): array {
                 return [
                     (string) $r['date'],
                     (string) $r['network'],
-                    (string) $r['type'],
                     number_format((float) $r['opening_balance'], 2, '.', ''),
-                    number_format((float) $r['purchased'], 2, '.', ''),
-                    number_format((float) $r['sold'], 2, '.', ''),
+                    number_format((float) $r['purchased_balance'], 2, '.', ''),
+                    number_format((float) $r['sold_balance'], 2, '.', ''),
                     number_format((float) ($r['profit'] ?? 0), 2, '.', ''),
                     number_format((float) $r['closing_balance'], 2, '.', ''),
-                    (string) ($r['supplier'] ?? ''),
-                    (string) ($r['customer_number'] ?? ''),
-                    (string) ($r['remarks'] ?? ''),
                 ];
             }, $rows),
             'summary' => [
+                'Opening' => number_format($totals['opening'], 2),
                 'Purchased' => number_format($totals['purchased'], 2),
                 'Sold' => number_format($totals['sold'], 2),
                 'Profit' => number_format($totals['profit'], 2),
+                'Closing' => number_format($totals['closing'], 2),
             ],
         ];
     }
@@ -365,4 +363,3 @@ function report_filename(array $filters, string $format): string
     $safeTo = preg_replace('/[^0-9-]+/', '', $filters['to']);
     return $safeModule . '_' . $safeFrom . '_to_' . $safeTo . '.' . $format;
 }
-

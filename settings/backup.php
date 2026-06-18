@@ -9,6 +9,7 @@ require_once __DIR__ . '/../config/db.php';
 $pageTitle = 'Backup Database - Shop Management';
 
 $pdo = db();
+app_require_owner_access();
 $success = flash_get('success');
 $error = flash_get('error');
 
@@ -132,4 +133,3 @@ require_once __DIR__ . '/../includes/sidebar.php';
 </div>
 
 <?php require_once __DIR__ . '/../includes/footer.php'; ?>
-

@@ -9,6 +9,8 @@ $pageTitle = 'Sales - Shop Management';
 $pdo = db();
 $success = flash_get('success');
 $error = flash_get('error');
+$canViewProfit = app_can_view_profit();
+$canEditDelete = app_can_edit_delete_records();
 
 $stmt = $pdo->query('
     SELECT s.id, s.product_id, p.product_name, s.quantity, s.sale_price, s.profit, s.created_at
@@ -27,12 +29,14 @@ require_once __DIR__ . '/../includes/sidebar.php';
 <div class="d-flex flex-wrap gap-2 align-items-center justify-content-between mb-4">
     <div>
         <h1 class="h3 mb-1 text-gray-900 font-bold tracking-tight">Sales Management</h1>
-        <p class="text-gray-500 text-sm mb-0">Track all your product sales and profits</p>
+        <p class="text-gray-500 text-sm mb-0">Track all your product sales<?= $canViewProfit ? ' and profits' : '' ?></p>
     </div>
     <div class="d-flex flex-wrap gap-2">
-        <a class="btn btn-secondary btn-sm" href="<?= h(app_url('reports/index.php?module=sales')) ?>">
-            <i data-lucide="bar-chart-3" class="w-4 h-4"></i> Reports
-        </a>
+        <?php if ($canViewProfit): ?>
+            <a class="btn btn-secondary btn-sm" href="<?= h(app_url('reports/index.php?module=sales')) ?>">
+                <i data-lucide="bar-chart-3" class="w-4 h-4"></i> Reports
+            </a>
+        <?php endif; ?>
         <a class="btn btn-primary btn-sm" href="<?= h(app_url('sales/add.php')) ?>">
             <i data-lucide="shopping-cart" class="w-4 h-4"></i> Add Sale
         </a>
@@ -58,8 +62,12 @@ require_once __DIR__ . '/../includes/sidebar.php';
                     <th class="text-end">Qty</th>
                     <th class="text-end">Sale Price</th>
                     <th class="text-end">Total</th>
-                    <th class="text-end">Profit</th>
-                    <th class="text-end">Actions</th>
+                    <?php if ($canViewProfit): ?>
+                        <th class="text-end">Profit</th>
+                    <?php endif; ?>
+                    <?php if ($canEditDelete): ?>
+                        <th class="text-end">Actions</th>
+                    <?php endif; ?>
                 </tr>
                 </thead>
                 <tbody>
@@ -71,16 +79,20 @@ require_once __DIR__ . '/../includes/sidebar.php';
                         <td class="text-end"><?= h((string) (int) $r['quantity']) ?></td>
                         <td class="text-end"><?= h(number_format((float) $r['sale_price'], 2)) ?></td>
                         <td class="text-end"><?= h(number_format((float) $total, 2)) ?></td>
-                        <td class="text-end"><?= h(number_format((float) $r['profit'], 2)) ?></td>
-                        <td class="text-end">
-                            <a class="btn btn-outline-secondary btn-sm" href="<?= h(app_url('sales/edit.php?id=' . (int) $r['id'])) ?>">Edit</a>
-                            <a class="btn btn-outline-danger btn-sm" href="<?= h(app_url('sales/delete.php?id=' . (int) $r['id'])) ?>">Delete</a>
-                        </td>
+                        <?php if ($canViewProfit): ?>
+                            <td class="text-end"><?= h(number_format((float) $r['profit'], 2)) ?></td>
+                        <?php endif; ?>
+                        <?php if ($canEditDelete): ?>
+                            <td class="text-end">
+                                <a class="btn btn-outline-secondary btn-sm" href="<?= h(app_url('sales/edit.php?id=' . (int) $r['id'])) ?>">Edit</a>
+                                <a class="btn btn-outline-danger btn-sm" href="<?= h(app_url('sales/delete.php?id=' . (int) $r['id'])) ?>">Delete</a>
+                            </td>
+                        <?php endif; ?>
                     </tr>
                 <?php endforeach; ?>
                 <?php if (!$rows): ?>
                     <tr>
-                        <td colspan="7" class="text-center text-muted py-4">No sales yet.</td>
+                        <td colspan="<?= h((string) (5 + ($canViewProfit ? 1 : 0) + ($canEditDelete ? 1 : 0))) ?>" class="text-center text-muted py-4">No sales yet.</td>
                     </tr>
                 <?php endif; ?>
                 </tbody>
@@ -90,4 +102,3 @@ require_once __DIR__ . '/../includes/sidebar.php';
 </div>
 
 <?php require_once __DIR__ . '/../includes/footer.php'; ?>
-

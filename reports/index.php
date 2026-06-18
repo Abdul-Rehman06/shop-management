@@ -12,6 +12,19 @@ $filters = report_filters_from_request();
 $modules = report_modules();
 $networks = report_load_networks($pdo);
 
+$canViewProfit = app_can_view_profit();
+if (!$canViewProfit && in_array($filters['module'], ['sales', 'load'], true)) {
+    flash_set('error', 'Access denied.');
+    app_redirect('reports/index.php?module=expenses');
+}
+
+if (!$canViewProfit) {
+    unset($modules['sales'], $modules['load']);
+    if (!isset($modules[$filters['module']])) {
+        $filters['module'] = array_key_first($modules) ?: 'expenses';
+    }
+}
+
 $data = report_fetch($pdo, $filters);
 
 $query = [
@@ -73,15 +86,6 @@ require_once __DIR__ . '/../includes/sidebar.php';
                         <?php foreach ($networks as $n): ?>
                             <option value="<?= h($n) ?>" <?= $filters['network'] === $n ? 'selected' : '' ?>><?= h($n) ?></option>
                         <?php endforeach; ?>
-                    </select>
-                </div>
-                <div class="col-12 col-md-3">
-                    <label class="form-label" for="type">Transaction Type</label>
-                    <select class="form-select" id="type" name="type">
-                        <option value="">All</option>
-                        <option value="opening" <?= $filters['type'] === 'opening' ? 'selected' : '' ?>>Opening</option>
-                        <option value="purchase" <?= $filters['type'] === 'purchase' ? 'selected' : '' ?>>Purchase</option>
-                        <option value="sale" <?= $filters['type'] === 'sale' ? 'selected' : '' ?>>Sale</option>
                     </select>
                 </div>
             <?php elseif (in_array($filters['module'], ['easypaisa', 'jazzcash', 'bank'], true)): ?>
@@ -154,4 +158,3 @@ require_once __DIR__ . '/../includes/sidebar.php';
 </div>
 
 <?php require_once __DIR__ . '/../includes/footer.php'; ?>
-

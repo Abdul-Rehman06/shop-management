@@ -10,6 +10,7 @@ function money($value): string
 }
 
 $pdo = db();
+$canViewProfit = app_can_view_profit();
 
 $networks = ['Jazz', 'Zong', 'Ufone', 'Telenor'];
 
@@ -54,7 +55,7 @@ $loadTotalBalance = array_sum($loadBalances);
 
 $loadLatestDate = (string) ($pdo->query("SELECT MAX(date) FROM load_entries")->fetchColumn() ?: '');
 $loadTotalProfit = 0.0;
-if ($loadLatestDate !== '') {
+if ($canViewProfit && $loadLatestDate !== '') {
     $stmt = $pdo->prepare("SELECT COALESCE(SUM(profit),0) FROM load_entries WHERE date = :date");
     $stmt->execute([':date' => $loadLatestDate]);
     $loadTotalProfit = (float) $stmt->fetchColumn();
@@ -112,18 +113,22 @@ $monthlyExpense = (float) $pdo->query("
       AND date <= LAST_DAY(CURDATE())
 ")->fetchColumn();
 
-$todayProfit = (float) $pdo->query("
-    SELECT COALESCE(SUM(profit), 0)
-    FROM sales
-    WHERE DATE(created_at) = CURDATE()
-")->fetchColumn();
+$todayProfit = 0.0;
+$monthlyProfit = 0.0;
+if ($canViewProfit) {
+    $todayProfit = (float) $pdo->query("
+        SELECT COALESCE(SUM(profit), 0)
+        FROM sales
+        WHERE DATE(created_at) = CURDATE()
+    ")->fetchColumn();
 
-$monthlyProfit = (float) $pdo->query("
-    SELECT COALESCE(SUM(profit), 0)
-    FROM sales
-    WHERE created_at >= DATE_FORMAT(CURDATE(), '%Y-%m-01 00:00:00')
-      AND created_at <= CONCAT(LAST_DAY(CURDATE()), ' 23:59:59')
-")->fetchColumn();
+    $monthlyProfit = (float) $pdo->query("
+        SELECT COALESCE(SUM(profit), 0)
+        FROM sales
+        WHERE created_at >= DATE_FORMAT(CURDATE(), '%Y-%m-01 00:00:00')
+          AND created_at <= CONCAT(LAST_DAY(CURDATE()), ' 23:59:59')
+    ")->fetchColumn();
+}
 
 $dailySalesData = [];
 $stmt = $pdo->query("
@@ -146,15 +151,17 @@ for ($i = 6; $i >= 0; $i--) {
 }
 
 $monthlyProfitData = [];
-$stmt = $pdo->query("
-    SELECT DATE_FORMAT(created_at, '%Y-%m') AS m, COALESCE(SUM(profit), 0) AS total
-    FROM sales
-    WHERE created_at >= DATE_SUB(DATE_FORMAT(CURDATE(), '%Y-%m-01'), INTERVAL 11 MONTH)
-    GROUP BY DATE_FORMAT(created_at, '%Y-%m')
-    ORDER BY m ASC
-");
-foreach ($stmt->fetchAll() as $row) {
-    $monthlyProfitData[(string) $row['m']] = (float) $row['total'];
+if ($canViewProfit) {
+    $stmt = $pdo->query("
+        SELECT DATE_FORMAT(created_at, '%Y-%m') AS m, COALESCE(SUM(profit), 0) AS total
+        FROM sales
+        WHERE created_at >= DATE_SUB(DATE_FORMAT(CURDATE(), '%Y-%m-01'), INTERVAL 11 MONTH)
+        GROUP BY DATE_FORMAT(created_at, '%Y-%m')
+        ORDER BY m ASC
+    ");
+    foreach ($stmt->fetchAll() as $row) {
+        $monthlyProfitData[(string) $row['m']] = (float) $row['total'];
+    }
 }
 
 $monthlyProfitLabels = [];
@@ -185,9 +192,11 @@ $extraHead = '<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/char
             <p class="text-gray-500">Here's what's happening in your shop today, <span class="font-medium text-brand-600"><?= date('F j, Y') ?></span>.</p>
         </div>
         <div class="flex flex-wrap gap-3 z-10">
-            <a href="<?= h(app_url('load-management/sale.php')) ?>" class="btn btn-outline-primary bg-white hover:bg-brand-50">
-                <i data-lucide="smartphone" class="w-4 h-4"></i> New Load
-            </a>
+            <?php if ($canViewProfit): ?>
+                <a href="<?= h(app_url('load-management/index.php')) ?>" class="btn btn-outline-primary bg-white hover:bg-brand-50">
+                    <i data-lucide="smartphone" class="w-4 h-4"></i> Load Entry
+                </a>
+            <?php endif; ?>
             <a href="<?= h(app_url('expenses/add.php')) ?>" class="btn btn-outline-danger bg-white hover:bg-red-50">
                 <i data-lucide="receipt" class="w-4 h-4"></i> Add Expense
             </a>
@@ -258,16 +267,18 @@ $extraHead = '<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/char
     </div>
 
     <!-- Load Profit -->
-    <div class="glass-card rounded-2xl p-6 relative overflow-hidden group hover:-translate-y-1 transition-all duration-300">
-        <div class="absolute -right-6 -top-6 w-24 h-24 bg-green-50 rounded-full group-hover:scale-150 transition-transform duration-500 ease-out z-0"></div>
-        <div class="relative z-10">
-            <div class="flex items-center justify-between mb-4">
-                <div class="text-sm font-semibold text-gray-500 uppercase tracking-wider">Load Profit</div>
-                <div class="p-2 bg-green-100 text-green-600 rounded-lg"><i data-lucide="trending-up" class="w-5 h-5"></i></div>
+    <?php if ($canViewProfit): ?>
+        <div class="glass-card rounded-2xl p-6 relative overflow-hidden group hover:-translate-y-1 transition-all duration-300">
+            <div class="absolute -right-6 -top-6 w-24 h-24 bg-green-50 rounded-full group-hover:scale-150 transition-transform duration-500 ease-out z-0"></div>
+            <div class="relative z-10">
+                <div class="flex items-center justify-between mb-4">
+                    <div class="text-sm font-semibold text-gray-500 uppercase tracking-wider">Load Profit</div>
+                    <div class="p-2 bg-green-100 text-green-600 rounded-lg"><i data-lucide="trending-up" class="w-5 h-5"></i></div>
+                </div>
+                <div class="text-3xl font-bold text-gray-900 tracking-tight">Rs <?= money($loadTotalProfit) ?></div>
             </div>
-            <div class="text-3xl font-bold text-gray-900 tracking-tight">Rs <?= money($loadTotalProfit) ?></div>
         </div>
-    </div>
+    <?php endif; ?>
 
     <!-- Jazz Balance -->
     <div class="glass-card rounded-2xl p-6 relative overflow-hidden group hover:-translate-y-1 transition-all duration-300">
@@ -378,28 +389,29 @@ $extraHead = '<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/char
     </div>
 
     <!-- Today Profit -->
-    <div class="glass-card rounded-2xl p-6 relative overflow-hidden group hover:-translate-y-1 transition-all duration-300">
-        <div class="absolute -right-6 -top-6 w-24 h-24 bg-green-50 rounded-full group-hover:scale-150 transition-transform duration-500 ease-out z-0"></div>
-        <div class="relative z-10">
-            <div class="flex items-center justify-between mb-4">
-                <div class="text-sm font-semibold text-gray-500 uppercase tracking-wider">Today's Profit</div>
-                <div class="p-2 bg-green-100 text-green-600 rounded-lg"><i data-lucide="trending-up" class="w-5 h-5"></i></div>
+    <?php if ($canViewProfit): ?>
+        <div class="glass-card rounded-2xl p-6 relative overflow-hidden group hover:-translate-y-1 transition-all duration-300">
+            <div class="absolute -right-6 -top-6 w-24 h-24 bg-green-50 rounded-full group-hover:scale-150 transition-transform duration-500 ease-out z-0"></div>
+            <div class="relative z-10">
+                <div class="flex items-center justify-between mb-4">
+                    <div class="text-sm font-semibold text-gray-500 uppercase tracking-wider">Today's Profit</div>
+                    <div class="p-2 bg-green-100 text-green-600 rounded-lg"><i data-lucide="trending-up" class="w-5 h-5"></i></div>
+                </div>
+                <div class="text-3xl font-bold text-success tracking-tight">Rs <?= money($todayProfit) ?></div>
             </div>
-            <div class="text-3xl font-bold text-success tracking-tight">Rs <?= money($todayProfit) ?></div>
         </div>
-    </div>
 
-    <!-- Monthly Profit -->
-    <div class="glass-card rounded-2xl p-6 relative overflow-hidden group hover:-translate-y-1 transition-all duration-300">
-        <div class="absolute -right-6 -top-6 w-24 h-24 bg-green-50 rounded-full group-hover:scale-150 transition-transform duration-500 ease-out z-0"></div>
-        <div class="relative z-10">
-            <div class="flex items-center justify-between mb-4">
-                <div class="text-sm font-semibold text-gray-500 uppercase tracking-wider">Monthly Profit</div>
-                <div class="p-2 bg-green-100 text-green-600 rounded-lg"><i data-lucide="calendar-check" class="w-5 h-5"></i></div>
+        <div class="glass-card rounded-2xl p-6 relative overflow-hidden group hover:-translate-y-1 transition-all duration-300">
+            <div class="absolute -right-6 -top-6 w-24 h-24 bg-green-50 rounded-full group-hover:scale-150 transition-transform duration-500 ease-out z-0"></div>
+            <div class="relative z-10">
+                <div class="flex items-center justify-between mb-4">
+                    <div class="text-sm font-semibold text-gray-500 uppercase tracking-wider">Monthly Profit</div>
+                    <div class="p-2 bg-green-100 text-green-600 rounded-lg"><i data-lucide="calendar-check" class="w-5 h-5"></i></div>
+                </div>
+                <div class="text-3xl font-bold text-success tracking-tight">Rs <?= money($monthlyProfit) ?></div>
             </div>
-            <div class="text-3xl font-bold text-success tracking-tight">Rs <?= money($monthlyProfit) ?></div>
         </div>
-    </div>
+    <?php endif; ?>
 </div>
 
 <div class="row g-4 mb-8">
@@ -418,32 +430,36 @@ $extraHead = '<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/char
         </div>
     </div>
 
-    <div class="col-12 col-lg-6">
-        <div class="glass-card rounded-2xl p-6 h-100 relative overflow-hidden">
-            <div class="d-flex justify-content-between align-items-center mb-6">
-                <div>
-                    <h3 class="h5 fw-bold text-gray-900 mb-1">Monthly Profit</h3>
-                    <div class="text-muted small">Earnings over last 12 months</div>
+    <?php if ($canViewProfit): ?>
+        <div class="col-12 col-lg-6">
+            <div class="glass-card rounded-2xl p-6 h-100 relative overflow-hidden">
+                <div class="d-flex justify-content-between align-items-center mb-6">
+                    <div>
+                        <h3 class="h5 fw-bold text-gray-900 mb-1">Monthly Profit</h3>
+                        <div class="text-muted small">Earnings over last 12 months</div>
+                    </div>
+                    <div class="p-2 bg-green-50 text-success rounded-lg"><i data-lucide="bar-chart-2" class="w-5 h-5"></i></div>
                 </div>
-                <div class="p-2 bg-green-50 text-success rounded-lg"><i data-lucide="bar-chart-2" class="w-5 h-5"></i></div>
-            </div>
-            <div class="relative h-64 w-full">
-                <canvas id="monthlyProfitChart"></canvas>
+                <div class="relative h-64 w-full">
+                    <canvas id="monthlyProfitChart"></canvas>
+                </div>
             </div>
         </div>
-    </div>
+    <?php endif; ?>
 </div>
 
 <!-- Quick Navigation Grid -->
 <div class="mb-4">
     <h3 class="text-xl font-bold text-gray-900 mb-4">Quick Navigation</h3>
     <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
-        <a href="<?= h(app_url('load-management/index.php')) ?>" class="glass-card rounded-xl p-4 text-center hover:-translate-y-1 transition-all group flex flex-col items-center justify-center gap-2 text-gray-600 hover:text-brand-600">
-            <div class="w-12 h-12 rounded-full bg-gray-50 flex items-center justify-center group-hover:bg-brand-50 transition-colors">
-                <i data-lucide="smartphone" class="w-6 h-6"></i>
-            </div>
-            <span class="text-sm font-medium">Load</span>
-        </a>
+        <?php if ($canViewProfit): ?>
+            <a href="<?= h(app_url('load-management/index.php')) ?>" class="glass-card rounded-xl p-4 text-center hover:-translate-y-1 transition-all group flex flex-col items-center justify-center gap-2 text-gray-600 hover:text-brand-600">
+                <div class="w-12 h-12 rounded-full bg-gray-50 flex items-center justify-center group-hover:bg-brand-50 transition-colors">
+                    <i data-lucide="smartphone" class="w-6 h-6"></i>
+                </div>
+                <span class="text-sm font-medium">Load</span>
+            </a>
+        <?php endif; ?>
         <a href="<?= h(app_url('easypaisa/index.php')) ?>" class="glass-card rounded-xl p-4 text-center hover:-translate-y-1 transition-all group flex flex-col items-center justify-center gap-2 text-gray-600 hover:text-emerald-600">
             <div class="w-12 h-12 rounded-full bg-gray-50 flex items-center justify-center group-hover:bg-emerald-50 transition-colors">
                 <i data-lucide="wallet" class="w-6 h-6"></i>
@@ -462,12 +478,14 @@ $extraHead = '<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/char
             </div>
             <span class="text-sm font-medium">Bank</span>
         </a>
-        <a href="<?= h(app_url('inventory/index.php')) ?>" class="glass-card rounded-xl p-4 text-center hover:-translate-y-1 transition-all group flex flex-col items-center justify-center gap-2 text-gray-600 hover:text-orange-600">
-            <div class="w-12 h-12 rounded-full bg-gray-50 flex items-center justify-center group-hover:bg-orange-50 transition-colors">
-                <i data-lucide="package" class="w-6 h-6"></i>
-            </div>
-            <span class="text-sm font-medium">Inventory</span>
-        </a>
+        <?php if (app_can_manage_stock()): ?>
+            <a href="<?= h(app_url('inventory/index.php')) ?>" class="glass-card rounded-xl p-4 text-center hover:-translate-y-1 transition-all group flex flex-col items-center justify-center gap-2 text-gray-600 hover:text-orange-600">
+                <div class="w-12 h-12 rounded-full bg-gray-50 flex items-center justify-center group-hover:bg-orange-50 transition-colors">
+                    <i data-lucide="package" class="w-6 h-6"></i>
+                </div>
+                <span class="text-sm font-medium">Inventory</span>
+            </a>
+        <?php endif; ?>
         <a href="<?= h(app_url('reports/index.php')) ?>" class="glass-card rounded-xl p-4 text-center hover:-translate-y-1 transition-all group flex flex-col items-center justify-center gap-2 text-gray-600 hover:text-cyan-600">
             <div class="w-12 h-12 rounded-full bg-gray-50 flex items-center justify-center group-hover:bg-cyan-50 transition-colors">
                 <i data-lucide="bar-chart-3" class="w-6 h-6"></i>
@@ -480,8 +498,6 @@ $extraHead = '<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/char
 <script>
     const dailySalesLabels = <?= json_encode($dailySalesLabels, JSON_UNESCAPED_SLASHES) ?>;
     const dailySalesTotals = <?= json_encode($dailySalesTotals, JSON_UNESCAPED_SLASHES) ?>;
-    const monthlyProfitLabels = <?= json_encode($monthlyProfitLabels, JSON_UNESCAPED_SLASHES) ?>;
-    const monthlyProfitTotals = <?= json_encode($monthlyProfitTotals, JSON_UNESCAPED_SLASHES) ?>;
 
     const brandColor = '#3B82F6';
     const successColor = '#10B981';
@@ -522,31 +538,38 @@ $extraHead = '<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/char
         }
     });
 
-    new Chart(document.getElementById('monthlyProfitChart'), {
-        type: 'bar',
-        data: {
-            labels: monthlyProfitLabels,
-            datasets: [{
-                label: 'Profit',
-                data: monthlyProfitTotals,
-                backgroundColor: 'rgba(16, 185, 129, 0.8)',
-                hoverBackgroundColor: successColor,
-                borderRadius: 4,
-                borderSkipped: false,
-                barThickness: 'flex',
-                maxBarThickness: 40
-            }]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: { legend: { display: false }, tooltip: { backgroundColor: '#111827', titleColor: '#fff', bodyColor: '#fff', borderColor: 'rgba(0,0,0,0.1)', borderWidth: 1 } },
-            scales: {
-                x: { grid: { display: false, drawBorder: false } },
-                y: { grid: { color: gridColor, drawBorder: false }, beginAtZero: true }
+    <?php if ($canViewProfit): ?>
+    const monthlyProfitLabels = <?= json_encode($monthlyProfitLabels, JSON_UNESCAPED_SLASHES) ?>;
+    const monthlyProfitTotals = <?= json_encode($monthlyProfitTotals, JSON_UNESCAPED_SLASHES) ?>;
+    const monthlyEl = document.getElementById('monthlyProfitChart');
+    if (monthlyEl) {
+        new Chart(monthlyEl, {
+            type: 'bar',
+            data: {
+                labels: monthlyProfitLabels,
+                datasets: [{
+                    label: 'Profit',
+                    data: monthlyProfitTotals,
+                    backgroundColor: 'rgba(16, 185, 129, 0.8)',
+                    hoverBackgroundColor: successColor,
+                    borderRadius: 4,
+                    borderSkipped: false,
+                    barThickness: 'flex',
+                    maxBarThickness: 40
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { display: false }, tooltip: { backgroundColor: '#111827', titleColor: '#fff', bodyColor: '#fff', borderColor: 'rgba(0,0,0,0.1)', borderWidth: 1 } },
+                scales: {
+                    x: { grid: { display: false, drawBorder: false } },
+                    y: { grid: { color: gridColor, drawBorder: false }, beginAtZero: true }
+                }
             }
-        }
-    });
+        });
+    }
+    <?php endif; ?>
 </script>
 
 <?php require_once __DIR__ . '/../includes/footer.php'; ?>

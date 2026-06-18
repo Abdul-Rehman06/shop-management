@@ -52,6 +52,7 @@ function app_current_admin(): ?array
         'id' => (int) $_SESSION['admin_id'],
         'name' => (string) ($_SESSION['admin_name'] ?? ''),
         'email' => (string) ($_SESSION['admin_email'] ?? ''),
+        'role' => (string) ($_SESSION['admin_role'] ?? 'owner'),
     ];
 }
 
@@ -62,6 +63,94 @@ function app_login_admin(array $admin): void
     $_SESSION['admin_id'] = (int) $admin['id'];
     $_SESSION['admin_name'] = (string) $admin['name'];
     $_SESSION['admin_email'] = (string) $admin['email'];
+    $_SESSION['admin_role'] = (string) ($admin['role'] ?? 'owner');
+}
+
+function app_admin_role(): string
+{
+    $admin = app_current_admin();
+    $role = (string) ($admin['role'] ?? 'owner');
+    if ($role !== 'owner' && $role !== 'staff') {
+        return 'owner';
+    }
+    return $role;
+}
+
+function app_is_owner(): bool
+{
+    return app_admin_role() === 'owner';
+}
+
+function app_can_edit_delete_records(): bool
+{
+    return app_is_owner();
+}
+
+function app_can_view_profit(): bool
+{
+    return app_is_owner();
+}
+
+function app_can_manage_stock(): bool
+{
+    return app_is_owner();
+}
+
+function app_require_owner_access(): void
+{
+    if (app_is_owner()) {
+        return;
+    }
+
+    if (function_exists('flash_set') && function_exists('app_redirect')) {
+        flash_set('error', 'Access denied.');
+        app_redirect('dashboard/index.php');
+    }
+
+    http_response_code(403);
+    exit;
+}
+
+function app_require_edit_delete_access(): void
+{
+    if (app_can_edit_delete_records()) {
+        return;
+    }
+
+    if (function_exists('flash_set') && function_exists('app_redirect')) {
+        flash_set('error', 'Access denied.');
+        app_redirect('dashboard/index.php');
+    }
+
+    http_response_code(403);
+    exit;
+}
+
+function app_require_stock_access(): void
+{
+    if (app_can_manage_stock()) {
+        return;
+    }
+
+    if (function_exists('flash_set') && function_exists('app_redirect')) {
+        flash_set('error', 'Access denied.');
+        app_redirect('dashboard/index.php');
+    }
+
+    http_response_code(403);
+    exit;
+}
+
+function app_ensure_schema(PDO $pdo): void
+{
+    try {
+        $stmt = $pdo->query("SHOW COLUMNS FROM admins LIKE 'role'");
+        $hasRole = (bool) $stmt->fetchColumn();
+        if (!$hasRole) {
+            $pdo->exec("ALTER TABLE admins ADD COLUMN role ENUM('owner','staff') NOT NULL DEFAULT 'owner'");
+        }
+    } catch (Throwable $e) {
+    }
 }
 
 function app_forget_remember_cookie(): void
@@ -167,9 +256,16 @@ function app_attempt_remember_login(): bool
         return false;
     }
 
-    $stmt = $pdo->prepare('SELECT id, name, email FROM admins WHERE id = :id LIMIT 1');
-    $stmt->execute([':id' => (int) $row['admin_id']]);
-    $admin = $stmt->fetch();
+    $admin = null;
+    try {
+        $stmt = $pdo->prepare('SELECT id, name, email, role FROM admins WHERE id = :id LIMIT 1');
+        $stmt->execute([':id' => (int) $row['admin_id']]);
+        $admin = $stmt->fetch();
+    } catch (Throwable $e) {
+        $stmt = $pdo->prepare('SELECT id, name, email FROM admins WHERE id = :id LIMIT 1');
+        $stmt->execute([':id' => (int) $row['admin_id']]);
+        $admin = $stmt->fetch();
+    }
     if (!$admin) {
         $del = $pdo->prepare('DELETE FROM admin_remember_tokens WHERE id = :id');
         $del->execute([':id' => (int) $row['id']]);

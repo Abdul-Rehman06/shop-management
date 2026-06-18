@@ -7,6 +7,7 @@ require_once __DIR__ . '/../includes/app.php';
 $pageTitle = 'Shop Settings - Shop Management';
 
 $pdo = db();
+app_require_owner_access();
 
 $pdo->exec("
     CREATE TABLE IF NOT EXISTS shop_settings (
@@ -151,4 +152,3 @@ require_once __DIR__ . '/../includes/sidebar.php';
 </div>
 
 <?php require_once __DIR__ . '/../includes/footer.php'; ?>
-

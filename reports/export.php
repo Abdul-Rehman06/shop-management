@@ -7,6 +7,11 @@ require_once __DIR__ . '/report_lib.php';
 
 $pdo = db();
 $filters = report_filters_from_request();
+$canViewProfit = app_can_view_profit();
+if (!$canViewProfit && in_array($filters['module'], ['sales', 'load'], true)) {
+    http_response_code(403);
+    exit;
+}
 $data = report_fetch($pdo, $filters);
 
 $format = strtolower(trim((string) ($_GET['format'] ?? 'csv')));
@@ -158,4 +163,3 @@ if ($format === 'pdf') {
 
 report_output_csv($filename, $data['headers'], $data['rows']);
 exit;
-

@@ -403,6 +403,7 @@ require_once __DIR__ . '/../includes/sidebar.php';
 
 $success = flash_get('success');
 $error = flash_get('error');
+$isOwner = app_is_owner();
 ?>
 
 <!-- Header -->
@@ -416,8 +417,10 @@ $error = flash_get('error');
     <div class="d-flex align-items-center gap-2">
         <a class="btn btn-outline-secondary btn-sm <?= $tab === 'daily' ? 'active' : '' ?>" href="?tab=daily&date=<?= h($currentDate) ?>&type=<?= h($currentType) ?>&account_id=<?= (int) $currentAccountId ?>">Daily Entry</a>
         <a class="btn btn-outline-secondary btn-sm <?= $tab === 'search' ? 'active' : '' ?>" href="?tab=search&from=<?= h($currentDate) ?>&to=<?= h($currentDate) ?>">Search</a>
-        <a class="btn btn-outline-secondary btn-sm" href="<?= h(app_url('settings/accounts.php?type=' . $currentType)) ?>">Manage Accounts</a>
-        <a class="btn btn-primary btn-sm" href="<?= h(app_url('settings/accounts.php?add=1&type=' . $currentType)) ?>">Add Account</a>
+        <?php if ($isOwner): ?>
+            <a class="btn btn-outline-secondary btn-sm" href="<?= h(app_url('settings/accounts.php?type=' . $currentType)) ?>">Manage Accounts</a>
+            <a class="btn btn-primary btn-sm" href="<?= h(app_url('settings/accounts.php?add=1&type=' . $currentType)) ?>">Add Account</a>
+        <?php endif; ?>
         <?php if ($tab === 'daily'): ?>
             <a class="btn btn-outline-primary btn-sm" href="<?= h(app_url('mobile-accounts/index.php?export=1&format=csv&tab=daily&date=' . urlencode($currentDate) . '&type=' . urlencode($currentType) . '&account_id=' . (int) $currentAccountId)) ?>">Export CSV</a>
             <a class="btn btn-outline-primary btn-sm" href="<?= h(app_url('mobile-accounts/index.php?export=1&format=xls&tab=daily&date=' . urlencode($currentDate) . '&type=' . urlencode($currentType) . '&account_id=' . (int) $currentAccountId)) ?>">Export Excel</a>

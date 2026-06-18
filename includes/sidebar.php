@@ -3,6 +3,8 @@
 declare(strict_types=1);
 
 $currentPath = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
+$canManageStock = app_can_manage_stock();
+$canViewProfit = app_can_view_profit();
 
 function isActive(string $path, string $currentPath): string {
     return strpos($currentPath, $path) !== false ? 'bg-brand-50 text-brand-600 border-r-2 border-brand-600' : 'text-gray-500 hover:bg-gray-50 hover:text-gray-900';
@@ -18,15 +20,19 @@ function isActive(string $path, string $currentPath): string {
             <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors <?= isActive('mobile-accounts', $currentPath) ?>" href="<?= h(app_url('mobile-accounts/index.php')) ?>">
                 <i data-lucide="wallet-cards" class="w-5 h-5"></i> Mobile Accounts
             </a>
-            <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors <?= isActive('load-management', $currentPath) ?>" href="<?= h(app_url('load-management/index.php')) ?>">
-                <i data-lucide="smartphone" class="w-5 h-5"></i> Load Management
-            </a>
+            <?php if ($canViewProfit): ?>
+                <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors <?= isActive('load-management', $currentPath) ?>" href="<?= h(app_url('load-management/index.php')) ?>">
+                    <i data-lucide="smartphone" class="w-5 h-5"></i> Load Management
+                </a>
+            <?php endif; ?>
             <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors <?= isActive('expenses', $currentPath) ?>" href="<?= h(app_url('expenses/index.php')) ?>">
                 <i data-lucide="receipt" class="w-5 h-5"></i> Expenses
             </a>
-            <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors <?= isActive('inventory', $currentPath) ?>" href="<?= h(app_url('inventory/index.php')) ?>">
-                <i data-lucide="package" class="w-5 h-5"></i> Inventory
-            </a>
+            <?php if ($canManageStock): ?>
+                <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors <?= isActive('inventory', $currentPath) ?>" href="<?= h(app_url('inventory/index.php')) ?>">
+                    <i data-lucide="package" class="w-5 h-5"></i> Inventory
+                </a>
+            <?php endif; ?>
             <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors <?= isActive('sales', $currentPath) ?>" href="<?= h(app_url('sales/index.php')) ?>">
                 <i data-lucide="shopping-cart" class="w-5 h-5"></i> Sales
             </a>
@@ -44,4 +50,3 @@ function isActive(string $path, string $currentPath): string {
     </div>
 </aside>
 <main class="flex-1 overflow-y-auto bg-appbg p-4 sm:p-6 lg:p-8">
-

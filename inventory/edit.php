@@ -6,6 +6,7 @@ require_once __DIR__ . '/../includes/app.php';
 require_once __DIR__ . '/inv_lib.php';
 
 $pdo = db();
+app_require_stock_access();
 $id = (int) ($_GET['id'] ?? 0);
 if ($id <= 0) {
     flash_set('error', 'Invalid product.');
@@ -120,4 +121,3 @@ require_once __DIR__ . '/../includes/sidebar.php';
 </div>
 
 <?php require_once __DIR__ . '/../includes/footer.php'; ?>
-

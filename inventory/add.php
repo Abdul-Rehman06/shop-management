@@ -7,6 +7,7 @@ require_once __DIR__ . '/../includes/app.php';
 $pageTitle = 'Add Product - Shop Management';
 
 $pdo = db();
+app_require_stock_access();
 
 $productName = '';
 $purchasePrice = '';
@@ -102,4 +103,3 @@ require_once __DIR__ . '/../includes/sidebar.php';
 </div>
 
 <?php require_once __DIR__ . '/../includes/footer.php'; ?>
-

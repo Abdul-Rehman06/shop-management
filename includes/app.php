@@ -13,6 +13,7 @@ if (file_exists(__DIR__ . '/../vendor/autoload.php')) {
 
 app_require_auth();
 $pdo = db();
+app_ensure_schema($pdo);
 wallet_ensure_schema($pdo);
 
 function h(string $value): string

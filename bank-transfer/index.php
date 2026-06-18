@@ -10,6 +10,8 @@ $pageTitle = 'Bank Transfer - Shop Management';
 $pdo = db();
 $success = flash_get('success');
 $error = flash_get('error');
+$canEditDelete = app_can_edit_delete_records();
+$isOwner = app_is_owner();
 
 $accounts = wallet_accounts($pdo, 'bank');
 $accountId = (int) ($_GET['account_id'] ?? ($accounts[0]['id'] ?? 0));
@@ -56,7 +58,9 @@ require_once __DIR__ . '/../includes/sidebar.php';
                 <?php endforeach; ?>
             </select>
         </form>
-        <a class="btn btn-outline-secondary btn-sm" href="<?= h(app_url('settings/accounts.php?type=bank')) ?>">Manage Accounts</a>
+        <?php if ($isOwner): ?>
+            <a class="btn btn-outline-secondary btn-sm" href="<?= h(app_url('settings/accounts.php?type=bank')) ?>">Manage Accounts</a>
+        <?php endif; ?>
     </div>
     <div class="d-flex flex-wrap gap-2">
         <a class="btn btn-secondary btn-sm" href="<?= h(app_url('bank-transfer/report.php')) ?>">Reports</a>
@@ -174,7 +178,9 @@ require_once __DIR__ . '/../includes/sidebar.php';
                     <th class="text-end">Amount</th>
                     <th class="text-end">Charges</th>
                     <th>Remarks</th>
-                    <th class="text-end">Actions</th>
+                    <?php if ($canEditDelete): ?>
+                        <th class="text-end">Actions</th>
+                    <?php endif; ?>
                 </tr>
                 </thead>
                 <tbody>
@@ -196,15 +202,17 @@ require_once __DIR__ . '/../includes/sidebar.php';
                         <td class="text-end" style="<?= h($amountStyle) ?>"><?= h(number_format((float) $r['amount'], 2)) ?></td>
                         <td class="text-end"><?= h(number_format((float) $r['charges'], 2)) ?></td>
                         <td><?= h((string) ($r['remarks'] ?? '')) ?></td>
-                        <td class="text-end">
-                            <a class="btn btn-outline-secondary btn-sm" href="<?= h(app_url('bank-transfer/edit.php?id=' . (int) $r['id'])) ?>">Edit</a>
-                            <a class="btn btn-outline-danger btn-sm" href="<?= h(app_url('bank-transfer/delete.php?id=' . (int) $r['id'])) ?>">Delete</a>
-                        </td>
+                        <?php if ($canEditDelete): ?>
+                            <td class="text-end">
+                                <a class="btn btn-outline-secondary btn-sm" href="<?= h(app_url('bank-transfer/edit.php?id=' . (int) $r['id'])) ?>">Edit</a>
+                                <a class="btn btn-outline-danger btn-sm" href="<?= h(app_url('bank-transfer/delete.php?id=' . (int) $r['id'])) ?>">Delete</a>
+                            </td>
+                        <?php endif; ?>
                     </tr>
                 <?php endforeach; ?>
                 <?php if (!$rows): ?>
                     <tr>
-                        <td colspan="9" class="text-center text-muted py-4">No transactions yet.</td>
+                        <td colspan="<?= h((string) (8 + ($canEditDelete ? 1 : 0))) ?>" class="text-center text-muted py-4">No transactions yet.</td>
                     </tr>
                 <?php endif; ?>
                 </tbody>

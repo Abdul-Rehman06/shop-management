@@ -8,6 +8,7 @@ require_once __DIR__ . '/load_lib.php';
 $pageTitle = 'Load Management - Shop Management';
 
 $pdo = db();
+app_require_owner_access();
 load_ensure_schema($pdo);
 $success = flash_get('success');
 $error = flash_get('error');

@@ -10,6 +10,7 @@ $pageTitle = 'Expenses - Shop Management';
 $pdo = db();
 $success = flash_get('success');
 $error = flash_get('error');
+$canEditDelete = app_can_edit_delete_records();
 
 $today = date('Y-m-d');
 $monthStart = date('Y-m-01');
@@ -76,7 +77,9 @@ require_once __DIR__ . '/../includes/sidebar.php';
                     <th>Category</th>
                     <th class="text-end">Amount</th>
                     <th>Description</th>
-                    <th class="text-end">Actions</th>
+                    <?php if ($canEditDelete): ?>
+                        <th class="text-end">Actions</th>
+                    <?php endif; ?>
                 </tr>
                 </thead>
                 <tbody>
@@ -86,15 +89,17 @@ require_once __DIR__ . '/../includes/sidebar.php';
                         <td><?= h((string) $r['category']) ?></td>
                         <td class="text-end"><?= h(number_format((float) $r['amount'], 2)) ?></td>
                         <td><?= h((string) ($r['description'] ?? '')) ?></td>
-                        <td class="text-end">
-                            <a class="btn btn-outline-secondary btn-sm" href="<?= h(app_url('expenses/edit.php?id=' . (int) $r['id'])) ?>">Edit</a>
-                            <a class="btn btn-outline-danger btn-sm" href="<?= h(app_url('expenses/delete.php?id=' . (int) $r['id'])) ?>">Delete</a>
-                        </td>
+                        <?php if ($canEditDelete): ?>
+                            <td class="text-end">
+                                <a class="btn btn-outline-secondary btn-sm" href="<?= h(app_url('expenses/edit.php?id=' . (int) $r['id'])) ?>">Edit</a>
+                                <a class="btn btn-outline-danger btn-sm" href="<?= h(app_url('expenses/delete.php?id=' . (int) $r['id'])) ?>">Delete</a>
+                            </td>
+                        <?php endif; ?>
                     </tr>
                 <?php endforeach; ?>
                 <?php if (!$rows): ?>
                     <tr>
-                        <td colspan="5" class="text-center text-muted py-4">No expenses yet.</td>
+                        <td colspan="<?= h((string) (4 + ($canEditDelete ? 1 : 0))) ?>" class="text-center text-muted py-4">No expenses yet.</td>
                     </tr>
                 <?php endif; ?>
                 </tbody>
@@ -104,4 +109,3 @@ require_once __DIR__ . '/../includes/sidebar.php';
 </div>
 
 <?php require_once __DIR__ . '/../includes/footer.php'; ?>
-
