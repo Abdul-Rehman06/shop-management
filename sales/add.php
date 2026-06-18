@@ -8,6 +8,7 @@ require_once __DIR__ . '/sales_lib.php';
 $pageTitle = 'Add Sale - Shop Management';
 
 $pdo = db();
+$canViewProfit = app_can_view_profit();
 $products = sales_products($pdo);
 
 $productId = (int) ($_POST['product_id'] ?? ($products[0]['id'] ?? 0));
@@ -61,7 +62,14 @@ if ($salePrice === '' && $defaultSale > 0) {
     $salePrice = (string) $defaultSale;
 }
 
-$extraHead = '<script>window.__products=' . json_encode($products, JSON_UNESCAPED_SLASHES) . ';</script>';
+$productsUi = $products;
+if (!$canViewProfit) {
+    $productsUi = array_map(static function (array $p): array {
+        unset($p['purchase_price']);
+        return $p;
+    }, $products);
+}
+$extraHead = '<script>window.__products=' . json_encode($productsUi, JSON_UNESCAPED_SLASHES) . ';</script>';
 
 require_once __DIR__ . '/../includes/header.php';
 require_once __DIR__ . '/../includes/sidebar.php';
@@ -97,10 +105,12 @@ require_once __DIR__ . '/../includes/sidebar.php';
                         </select>
                     </div>
 
-                    <div class="col-12 col-md-3">
-                        <label class="form-label" for="purchase_price">Purchase Price</label>
-                        <input class="form-control" type="number" step="0.01" id="purchase_price" value="<?= h(number_format($purchasePrice, 2, '.', '')) ?>" disabled>
-                    </div>
+                    <?php if ($canViewProfit): ?>
+                        <div class="col-12 col-md-3">
+                            <label class="form-label" for="purchase_price">Purchase Price</label>
+                            <input class="form-control" type="number" step="0.01" id="purchase_price" value="<?= h(number_format($purchasePrice, 2, '.', '')) ?>" disabled>
+                        </div>
+                    <?php endif; ?>
 
                     <div class="col-12 col-md-3">
                         <label class="form-label" for="quantity">Quantity</label>
@@ -112,10 +122,12 @@ require_once __DIR__ . '/../includes/sidebar.php';
                         <input class="form-control" type="number" step="0.01" id="sale_price" name="sale_price" value="<?= h($salePrice) ?>" required>
                     </div>
 
-                    <div class="col-12 col-md-3">
-                        <label class="form-label" for="profit_total">Profit (Total)</label>
-                        <input class="form-control" type="number" step="0.01" id="profit_total" value="0.00" disabled>
-                    </div>
+                    <?php if ($canViewProfit): ?>
+                        <div class="col-12 col-md-3">
+                            <label class="form-label" for="profit_total">Profit (Total)</label>
+                            <input class="form-control" type="number" step="0.01" id="profit_total" value="0.00" disabled>
+                        </div>
+                    <?php endif; ?>
                 </div>
 
                 <div class="mt-3">
@@ -140,12 +152,16 @@ require_once __DIR__ . '/../includes/sidebar.php';
 
         function recalc() {
             const p = selectedProduct();
-            const purchase = p ? parseFloat(p.purchase_price) : 0;
+            const purchase = p && typeof p.purchase_price !== 'undefined' ? (parseFloat(p.purchase_price) || 0) : 0;
             const qty = parseInt(qtyInput.value || '0', 10) || 0;
             const sale = parseFloat(saleInput.value || '0') || 0;
-            purchaseInput.value = purchase.toFixed(2);
-            const profit = (sale - purchase) * qty;
-            profitInput.value = profit.toFixed(2);
+            if (purchaseInput) {
+                purchaseInput.value = purchase.toFixed(2);
+            }
+            if (profitInput) {
+                const profit = (sale - purchase) * qty;
+                profitInput.value = profit.toFixed(2);
+            }
         }
 
         productSelect.addEventListener('change', () => {
@@ -165,4 +181,3 @@ require_once __DIR__ . '/../includes/sidebar.php';
 <?php endif; ?>
 
 <?php require_once __DIR__ . '/../includes/footer.php'; ?>
-

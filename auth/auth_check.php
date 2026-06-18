@@ -151,6 +151,71 @@ function app_ensure_schema(PDO $pdo): void
         }
     } catch (Throwable $e) {
     }
+
+    try {
+        $pdo->exec("
+            CREATE TABLE IF NOT EXISTS bank_deposits (
+                id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+                bank_account_id BIGINT UNSIGNED NULL,
+                bank_name VARCHAR(120) NULL,
+                amount DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+                deposit_date DATE NOT NULL,
+                note VARCHAR(255) NULL,
+                bank_wallet_transaction_id BIGINT UNSIGNED NULL,
+                cash_wallet_transaction_id BIGINT UNSIGNED NULL,
+                created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (id),
+                KEY idx_bank_deposits_date (deposit_date),
+                KEY idx_bank_deposits_bank_account (bank_account_id),
+                KEY idx_bank_deposits_bank_txn (bank_wallet_transaction_id),
+                KEY idx_bank_deposits_cash_txn (cash_wallet_transaction_id),
+                CONSTRAINT fk_bank_deposits_bank_account FOREIGN KEY (bank_account_id) REFERENCES accounts(id) ON UPDATE CASCADE ON DELETE SET NULL,
+                CONSTRAINT fk_bank_deposits_bank_txn FOREIGN KEY (bank_wallet_transaction_id) REFERENCES wallet_transactions(id) ON UPDATE CASCADE ON DELETE SET NULL,
+                CONSTRAINT fk_bank_deposits_cash_txn FOREIGN KEY (cash_wallet_transaction_id) REFERENCES wallet_transactions(id) ON UPDATE CASCADE ON DELETE SET NULL
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        ");
+    } catch (Throwable $e) {
+    }
+
+    try {
+        $pdo->exec("
+            CREATE TABLE IF NOT EXISTS sales_returns (
+                id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+                sale_id BIGINT UNSIGNED NOT NULL,
+                quantity INT NOT NULL,
+                return_date DATE NOT NULL,
+                reason ENUM('return','exchange') NOT NULL DEFAULT 'return',
+                notes VARCHAR(255) NULL,
+                profit_adjustment DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+                created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (id),
+                KEY idx_sales_returns_sale_id (sale_id),
+                KEY idx_sales_returns_date (return_date),
+                CONSTRAINT fk_sales_returns_sale_id FOREIGN KEY (sale_id) REFERENCES sales(id) ON UPDATE CASCADE ON DELETE CASCADE
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        ");
+    } catch (Throwable $e) {
+    }
+
+    try {
+        $pdo->exec("
+            CREATE TABLE IF NOT EXISTS sales_exchanges (
+                id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+                return_id BIGINT UNSIGNED NOT NULL,
+                new_sale_id BIGINT UNSIGNED NOT NULL,
+                exchange_date DATE NOT NULL,
+                notes VARCHAR(255) NULL,
+                created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (id),
+                KEY idx_sales_exchanges_return_id (return_id),
+                KEY idx_sales_exchanges_new_sale_id (new_sale_id),
+                KEY idx_sales_exchanges_date (exchange_date),
+                CONSTRAINT fk_sales_exchanges_return_id FOREIGN KEY (return_id) REFERENCES sales_returns(id) ON UPDATE CASCADE ON DELETE CASCADE,
+                CONSTRAINT fk_sales_exchanges_new_sale_id FOREIGN KEY (new_sale_id) REFERENCES sales(id) ON UPDATE CASCADE ON DELETE CASCADE
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        ");
+    } catch (Throwable $e) {
+    }
 }
 
 function app_forget_remember_cookie(): void

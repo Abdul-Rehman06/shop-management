@@ -13,9 +13,16 @@ $canViewProfit = app_can_view_profit();
 $canEditDelete = app_can_edit_delete_records();
 
 $stmt = $pdo->query('
-    SELECT s.id, s.product_id, p.product_name, s.quantity, s.sale_price, s.profit, s.created_at
+    SELECT
+        s.id, s.product_id, p.product_name, s.quantity, s.sale_price, s.profit, s.created_at,
+        COALESCE(r.returned_qty, 0) AS returned_qty
     FROM sales s
     JOIN products p ON p.id = s.product_id
+    LEFT JOIN (
+        SELECT sale_id, COALESCE(SUM(quantity), 0) AS returned_qty
+        FROM sales_returns
+        GROUP BY sale_id
+    ) r ON r.sale_id = s.id
     ORDER BY s.created_at DESC, s.id DESC
     LIMIT 50
 ');
@@ -60,11 +67,13 @@ require_once __DIR__ . '/../includes/sidebar.php';
                     <th>Date/Time</th>
                     <th>Product</th>
                     <th class="text-end">Qty</th>
+                    <th class="text-end">Returned</th>
                     <th class="text-end">Sale Price</th>
                     <th class="text-end">Total</th>
                     <?php if ($canViewProfit): ?>
                         <th class="text-end">Profit</th>
                     <?php endif; ?>
+                    <th class="text-end">Return/Exchange</th>
                     <?php if ($canEditDelete): ?>
                         <th class="text-end">Actions</th>
                     <?php endif; ?>
@@ -73,15 +82,24 @@ require_once __DIR__ . '/../includes/sidebar.php';
                 <tbody>
                 <?php foreach ($rows as $r): ?>
                     <?php $total = (int) $r['quantity'] * (float) $r['sale_price']; ?>
+                    <?php
+                    $returnedQty = (int) ($r['returned_qty'] ?? 0);
+                    $remainingQty = max(0, (int) $r['quantity'] - $returnedQty);
+                    ?>
                     <tr>
                         <td><?= h((string) $r['created_at']) ?></td>
                         <td><?= h((string) $r['product_name']) ?></td>
                         <td class="text-end"><?= h((string) (int) $r['quantity']) ?></td>
+                        <td class="text-end"><?= h((string) $returnedQty) ?></td>
                         <td class="text-end"><?= h(number_format((float) $r['sale_price'], 2)) ?></td>
                         <td class="text-end"><?= h(number_format((float) $total, 2)) ?></td>
                         <?php if ($canViewProfit): ?>
                             <td class="text-end"><?= h(number_format((float) $r['profit'], 2)) ?></td>
                         <?php endif; ?>
+                        <td class="text-end">
+                            <a class="btn btn-outline-primary btn-sm <?= $remainingQty <= 0 ? 'disabled' : '' ?>" href="<?= h(app_url('sales/return.php?id=' . (int) $r['id'])) ?>">Return</a>
+                            <a class="btn btn-outline-primary btn-sm <?= $remainingQty <= 0 ? 'disabled' : '' ?>" href="<?= h(app_url('sales/exchange.php?id=' . (int) $r['id'])) ?>">Exchange</a>
+                        </td>
                         <?php if ($canEditDelete): ?>
                             <td class="text-end">
                                 <a class="btn btn-outline-secondary btn-sm" href="<?= h(app_url('sales/edit.php?id=' . (int) $r['id'])) ?>">Edit</a>
@@ -92,7 +110,7 @@ require_once __DIR__ . '/../includes/sidebar.php';
                 <?php endforeach; ?>
                 <?php if (!$rows): ?>
                     <tr>
-                        <td colspan="<?= h((string) (5 + ($canViewProfit ? 1 : 0) + ($canEditDelete ? 1 : 0))) ?>" class="text-center text-muted py-4">No sales yet.</td>
+                        <td colspan="<?= h((string) (7 + ($canViewProfit ? 1 : 0) + ($canEditDelete ? 1 : 0))) ?>" class="text-center text-muted py-4">No sales yet.</td>
                     </tr>
                 <?php endif; ?>
                 </tbody>

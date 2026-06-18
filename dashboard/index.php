@@ -117,16 +117,25 @@ $todayProfit = 0.0;
 $monthlyProfit = 0.0;
 if ($canViewProfit) {
     $todayProfit = (float) $pdo->query("
-        SELECT COALESCE(SUM(profit), 0)
-        FROM sales
-        WHERE DATE(created_at) = CURDATE()
+        SELECT
+            COALESCE((SELECT SUM(profit) FROM sales WHERE DATE(created_at) = CURDATE()), 0)
+            + COALESCE((SELECT SUM(profit_adjustment) FROM sales_returns WHERE return_date = CURDATE()), 0)
     ")->fetchColumn();
 
     $monthlyProfit = (float) $pdo->query("
-        SELECT COALESCE(SUM(profit), 0)
-        FROM sales
-        WHERE created_at >= DATE_FORMAT(CURDATE(), '%Y-%m-01 00:00:00')
-          AND created_at <= CONCAT(LAST_DAY(CURDATE()), ' 23:59:59')
+        SELECT
+            COALESCE((
+                SELECT SUM(profit)
+                FROM sales
+                WHERE created_at >= DATE_FORMAT(CURDATE(), '%Y-%m-01 00:00:00')
+                  AND created_at <= CONCAT(LAST_DAY(CURDATE()), ' 23:59:59')
+            ), 0)
+            + COALESCE((
+                SELECT SUM(profit_adjustment)
+                FROM sales_returns
+                WHERE return_date >= DATE_FORMAT(CURDATE(), '%Y-%m-01')
+                  AND return_date <= LAST_DAY(CURDATE())
+            ), 0)
     ")->fetchColumn();
 }
 
@@ -153,10 +162,19 @@ for ($i = 6; $i >= 0; $i--) {
 $monthlyProfitData = [];
 if ($canViewProfit) {
     $stmt = $pdo->query("
-        SELECT DATE_FORMAT(created_at, '%Y-%m') AS m, COALESCE(SUM(profit), 0) AS total
-        FROM sales
-        WHERE created_at >= DATE_SUB(DATE_FORMAT(CURDATE(), '%Y-%m-01'), INTERVAL 11 MONTH)
-        GROUP BY DATE_FORMAT(created_at, '%Y-%m')
+        SELECT m, SUM(total) AS total
+        FROM (
+            SELECT DATE_FORMAT(created_at, '%Y-%m') AS m, COALESCE(SUM(profit), 0) AS total
+            FROM sales
+            WHERE created_at >= DATE_SUB(DATE_FORMAT(CURDATE(), '%Y-%m-01'), INTERVAL 11 MONTH)
+            GROUP BY DATE_FORMAT(created_at, '%Y-%m')
+            UNION ALL
+            SELECT DATE_FORMAT(return_date, '%Y-%m') AS m, COALESCE(SUM(profit_adjustment), 0) AS total
+            FROM sales_returns
+            WHERE return_date >= DATE_SUB(DATE_FORMAT(CURDATE(), '%Y-%m-01'), INTERVAL 11 MONTH)
+            GROUP BY DATE_FORMAT(return_date, '%Y-%m')
+        ) x
+        GROUP BY m
         ORDER BY m ASC
     ");
     foreach ($stmt->fetchAll() as $row) {

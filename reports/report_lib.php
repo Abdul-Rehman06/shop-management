@@ -318,9 +318,22 @@ function report_fetch(PDO $pdo, array $filters): array
 
     $params = [':from' => $from . ' 00:00:00', ':to' => $to . ' 23:59:59'];
     $stmt = $pdo->prepare("
-        SELECT DATE(s.created_at) AS sale_date, p.product_name, s.quantity, s.sale_price, s.profit, s.created_at
+        SELECT
+            DATE(s.created_at) AS sale_date,
+            p.product_name,
+            s.quantity,
+            COALESCE(r.returned_qty, 0) AS returned_qty,
+            s.sale_price,
+            s.profit,
+            COALESCE(r.profit_adj, 0) AS profit_adj,
+            s.created_at
         FROM sales s
         JOIN products p ON p.id = s.product_id
+        LEFT JOIN (
+            SELECT sale_id, COALESCE(SUM(quantity), 0) AS returned_qty, COALESCE(SUM(profit_adjustment), 0) AS profit_adj
+            FROM sales_returns
+            GROUP BY sale_id
+        ) r ON r.sale_id = s.id
         WHERE s.created_at >= :from AND s.created_at <= :to
         ORDER BY s.created_at ASC, s.id ASC
     ");
@@ -330,21 +343,30 @@ function report_fetch(PDO $pdo, array $filters): array
     $totalSales = 0.0;
     $totalProfit = 0.0;
     foreach ($rows as $r) {
-        $totalSales += (int) $r['quantity'] * (float) $r['sale_price'];
-        $totalProfit += (float) $r['profit'];
+        $qty = (int) $r['quantity'];
+        $returned = (int) ($r['returned_qty'] ?? 0);
+        $netQty = max(0, $qty - $returned);
+        $totalSales += $netQty * (float) $r['sale_price'];
+        $totalProfit += (float) $r['profit'] + (float) ($r['profit_adj'] ?? 0);
     }
 
     return [
-        'headers' => ['Date', 'Product', 'Qty', 'Sale Price', 'Total', 'Profit'],
+        'headers' => ['Date', 'Product', 'Qty', 'Returned', 'Net Qty', 'Sale Price', 'Total', 'Profit'],
         'rows' => array_map(static function (array $r): array {
-            $total = (int) $r['quantity'] * (float) $r['sale_price'];
+            $qty = (int) $r['quantity'];
+            $returned = (int) ($r['returned_qty'] ?? 0);
+            $netQty = max(0, $qty - $returned);
+            $total = $netQty * (float) $r['sale_price'];
+            $profit = (float) $r['profit'] + (float) ($r['profit_adj'] ?? 0);
             return [
                 (string) $r['sale_date'],
                 (string) $r['product_name'],
-                (string) (int) $r['quantity'],
+                (string) $qty,
+                (string) $returned,
+                (string) $netQty,
                 number_format((float) $r['sale_price'], 2, '.', ''),
                 number_format((float) $total, 2, '.', ''),
-                number_format((float) $r['profit'], 2, '.', ''),
+                number_format($profit, 2, '.', ''),
             ];
         }, $rows),
         'summary' => [
