@@ -6,6 +6,11 @@ require_once __DIR__ . '/../includes/app.php';
 require_once __DIR__ . '/load_lib.php';
 
 $pdo = db();
+load_ensure_schema($pdo);
+flash_set('success', 'Load Management has been updated to Daily Totals. Use the main Load Management page.');
+app_redirect('load-management/index.php');
+
+$pdo = db();
 $id = (int) ($_GET['id'] ?? 0);
 if ($id <= 0) {
     flash_set('error', 'Invalid transaction.');
@@ -232,4 +237,3 @@ require_once __DIR__ . '/../includes/sidebar.php';
 </div>
 
 <?php require_once __DIR__ . '/../includes/footer.php'; ?>
-

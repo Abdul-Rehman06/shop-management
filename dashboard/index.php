@@ -16,15 +16,32 @@ $networks = ['Jazz', 'Zong', 'Ufone', 'Telenor'];
 $walletAll = wallet_combined_summary($pdo, null, true);
 
 $loadBalances = array_fill_keys($networks, 0.0);
+$pdo->exec("
+    CREATE TABLE IF NOT EXISTS load_entries (
+        id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+        network VARCHAR(50) NOT NULL,
+        date DATE NOT NULL,
+        opening_balance DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+        purchased_balance DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+        sold_balance DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+        profit DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+        closing_balance DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        PRIMARY KEY (id),
+        UNIQUE KEY uq_load_entries_date_network (date, network),
+        KEY idx_load_entries_date (date),
+        KEY idx_load_entries_network (network)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+");
+
 $stmt = $pdo->query("
-    SELECT t.network, t.closing_balance
-    FROM load_transactions t
-    WHERE t.id = (
-        SELECT t2.id
-        FROM load_transactions t2
-        WHERE t2.network = t.network
-        ORDER BY t2.date DESC, t2.id DESC
-        LIMIT 1
+    SELECT e.network, e.closing_balance
+    FROM load_entries e
+    WHERE e.date = (
+        SELECT MAX(e2.date)
+        FROM load_entries e2
+        WHERE e2.network = e.network
     )
 ");
 foreach ($stmt->fetchAll() as $row) {
@@ -34,6 +51,14 @@ foreach ($stmt->fetchAll() as $row) {
     }
 }
 $loadTotalBalance = array_sum($loadBalances);
+
+$loadLatestDate = (string) ($pdo->query("SELECT MAX(date) FROM load_entries")->fetchColumn() ?: '');
+$loadTotalProfit = 0.0;
+if ($loadLatestDate !== '') {
+    $stmt = $pdo->prepare("SELECT COALESCE(SUM(profit),0) FROM load_entries WHERE date = :date");
+    $stmt->execute([':date' => $loadLatestDate]);
+    $loadTotalProfit = (float) $stmt->fetchColumn();
+}
 
 $easypaisaNet = (float) $pdo->query("
     SELECT COALESCE(SUM(
@@ -229,6 +254,18 @@ $extraHead = '<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/char
                 <div class="p-2 bg-blue-100 text-blue-600 rounded-lg"><i data-lucide="smartphone" class="w-5 h-5"></i></div>
             </div>
             <div class="text-3xl font-bold text-gray-900 tracking-tight">Rs <?= money($loadTotalBalance) ?></div>
+        </div>
+    </div>
+
+    <!-- Load Profit -->
+    <div class="glass-card rounded-2xl p-6 relative overflow-hidden group hover:-translate-y-1 transition-all duration-300">
+        <div class="absolute -right-6 -top-6 w-24 h-24 bg-green-50 rounded-full group-hover:scale-150 transition-transform duration-500 ease-out z-0"></div>
+        <div class="relative z-10">
+            <div class="flex items-center justify-between mb-4">
+                <div class="text-sm font-semibold text-gray-500 uppercase tracking-wider">Load Profit</div>
+                <div class="p-2 bg-green-100 text-green-600 rounded-lg"><i data-lucide="trending-up" class="w-5 h-5"></i></div>
+            </div>
+            <div class="text-3xl font-bold text-gray-900 tracking-tight">Rs <?= money($loadTotalProfit) ?></div>
         </div>
     </div>
 

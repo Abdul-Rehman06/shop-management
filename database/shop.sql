@@ -101,6 +101,23 @@ CREATE TABLE IF NOT EXISTS `load_transactions` (
   KEY `idx_load_transactions_type` (`type`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE IF NOT EXISTS `load_entries` (
+  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `network` VARCHAR(50) NOT NULL,
+  `date` DATE NOT NULL,
+  `opening_balance` DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+  `purchased_balance` DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+  `sold_balance` DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+  `profit` DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+  `closing_balance` DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+  `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_load_entries_date_network` (`date`, `network`),
+  KEY `idx_load_entries_date` (`date`),
+  KEY `idx_load_entries_network` (`network`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE IF NOT EXISTS `easypaisa_transactions` (
   `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   `date` DATE NOT NULL,

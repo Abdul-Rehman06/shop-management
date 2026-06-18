@@ -8,12 +8,13 @@ require_once __DIR__ . '/load_lib.php';
 $pageTitle = 'Load Reports - Shop Management';
 
 $pdo = db();
+$pdo = db();
+load_ensure_schema($pdo);
 $networks = load_get_networks($pdo);
 
 $from = (string) ($_GET['from'] ?? date('Y-m-d'));
 $to = (string) ($_GET['to'] ?? date('Y-m-d'));
 $network = trim((string) ($_GET['network'] ?? ''));
-$type = trim((string) ($_GET['type'] ?? ''));
 
 $params = [
     ':from' => $from,
@@ -25,16 +26,12 @@ if ($network !== '') {
     $where .= ' AND network = :network';
     $params[':network'] = $network;
 }
-if ($type !== '') {
-    $where .= ' AND type = :type';
-    $params[':type'] = $type;
-}
 
 $sql = "
-    SELECT id, date, network, type, opening_balance, purchased, sold, profit, closing_balance, supplier, customer_number, remarks
-    FROM load_transactions
+    SELECT id, date, network, opening_balance, purchased_balance, sold_balance, profit, closing_balance
+    FROM load_entries
     {$where}
-    ORDER BY date ASC, id ASC
+    ORDER BY date ASC, network ASC
 ";
 $stmt = $pdo->prepare($sql);
 $stmt->execute($params);
@@ -43,15 +40,19 @@ $rows = $stmt->fetchAll();
 $totalPurchased = 0.0;
 $totalSold = 0.0;
 $totalProfit = 0.0;
+$totalOpening = 0.0;
+$totalClosing = 0.0;
 
 foreach ($rows as $r) {
-    $totalPurchased += (float) $r['purchased'];
-    $totalSold += (float) $r['sold'];
+    $totalOpening += (float) $r['opening_balance'];
+    $totalPurchased += (float) $r['purchased_balance'];
+    $totalSold += (float) $r['sold_balance'];
     $totalProfit += (float) $r['profit'];
+    $totalClosing += (float) $r['closing_balance'];
 }
 
-$firstOpening = $rows ? (float) $rows[0]['opening_balance'] : 0.0;
-$lastClosing = $rows ? (float) $rows[count($rows) - 1]['closing_balance'] : 0.0;
+$firstOpening = $totalOpening;
+$lastClosing = $totalClosing;
 
 require_once __DIR__ . '/../includes/header.php';
 require_once __DIR__ . '/../includes/sidebar.php';
@@ -81,15 +82,6 @@ require_once __DIR__ . '/../includes/sidebar.php';
                     <?php foreach ($networks as $n): ?>
                         <option value="<?= h($n) ?>" <?= $n === $network ? 'selected' : '' ?>><?= h($n) ?></option>
                     <?php endforeach; ?>
-                </select>
-            </div>
-            <div class="col-12 col-md-3">
-                <label class="form-label" for="type">Type</label>
-                <select class="form-select" id="type" name="type">
-                    <option value="">All</option>
-                    <option value="opening" <?= $type === 'opening' ? 'selected' : '' ?>>Opening</option>
-                    <option value="purchase" <?= $type === 'purchase' ? 'selected' : '' ?>>Purchase</option>
-                    <option value="sale" <?= $type === 'sale' ? 'selected' : '' ?>>Sale</option>
                 </select>
             </div>
             <div class="col-12">
@@ -142,14 +134,11 @@ require_once __DIR__ . '/../includes/sidebar.php';
                 <tr>
                     <th>Date</th>
                     <th>Network</th>
-                    <th>Type</th>
                     <th class="text-end">Opening</th>
                     <th class="text-end">Purchased</th>
                     <th class="text-end">Sold</th>
                     <th class="text-end">Profit</th>
                     <th class="text-end">Closing</th>
-                    <th>Party</th>
-                    <th>Remarks</th>
                 </tr>
                 </thead>
                 <tbody>
@@ -157,29 +146,16 @@ require_once __DIR__ . '/../includes/sidebar.php';
                     <tr>
                         <td><?= h((string) $r['date']) ?></td>
                         <td><?= h((string) $r['network']) ?></td>
-                        <td><?= h((string) $r['type']) ?></td>
                         <td class="text-end"><?= h(number_format((float) $r['opening_balance'], 2)) ?></td>
-                        <td class="text-end"><?= h(number_format((float) $r['purchased'], 2)) ?></td>
-                        <td class="text-end"><?= h(number_format((float) $r['sold'], 2)) ?></td>
+                        <td class="text-end"><?= h(number_format((float) $r['purchased_balance'], 2)) ?></td>
+                        <td class="text-end"><?= h(number_format((float) $r['sold_balance'], 2)) ?></td>
                         <td class="text-end"><?= h(number_format((float) $r['profit'], 2)) ?></td>
                         <td class="text-end"><?= h(number_format((float) $r['closing_balance'], 2)) ?></td>
-                        <td>
-                            <?php
-                            $party = '';
-                            if ((string) $r['type'] === 'purchase') {
-                                $party = (string) ($r['supplier'] ?? '');
-                            } elseif ((string) $r['type'] === 'sale') {
-                                $party = (string) ($r['customer_number'] ?? '');
-                            }
-                            ?>
-                            <?= h($party) ?>
-                        </td>
-                        <td><?= h((string) ($r['remarks'] ?? '')) ?></td>
                     </tr>
                 <?php endforeach; ?>
                 <?php if (!$rows): ?>
                     <tr>
-                        <td colspan="10" class="text-center text-muted py-4">No data found for selected filters.</td>
+                        <td colspan="7" class="text-center text-muted py-4">No data found for selected filters.</td>
                     </tr>
                 <?php endif; ?>
                 </tbody>
@@ -193,4 +169,3 @@ require_once __DIR__ . '/../includes/sidebar.php';
 </div>
 
 <?php require_once __DIR__ . '/../includes/footer.php'; ?>
-
