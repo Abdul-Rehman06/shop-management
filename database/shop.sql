@@ -119,6 +119,34 @@ CREATE TABLE IF NOT EXISTS `load_entries` (
   KEY `idx_load_entries_network` (`network`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE IF NOT EXISTS `udhar_customers` (
+  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `name` VARCHAR(120) NOT NULL,
+  `phone` VARCHAR(30) NULL,
+  `amount` DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+  `udhar_date` DATE NOT NULL,
+  `notes` VARCHAR(255) NULL,
+  `status` ENUM('pending','cleared') NOT NULL DEFAULT 'pending',
+  `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_udhar_status` (`status`),
+  KEY `idx_udhar_date` (`udhar_date`),
+  KEY `idx_udhar_phone` (`phone`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `udhar_payments` (
+  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `udhar_id` BIGINT UNSIGNED NOT NULL,
+  `amount` DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+  `payment_date` DATE NOT NULL,
+  `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_udhar_payments_udhar_id` (`udhar_id`),
+  KEY `idx_udhar_payments_date` (`payment_date`),
+  CONSTRAINT `fk_udhar_payments_udhar_id` FOREIGN KEY (`udhar_id`) REFERENCES `udhar_customers` (`id`) ON UPDATE CASCADE ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE IF NOT EXISTS `easypaisa_transactions` (
   `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   `date` DATE NOT NULL,

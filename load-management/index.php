@@ -8,7 +8,7 @@ require_once __DIR__ . '/load_lib.php';
 $pageTitle = 'Load Management - Shop Management';
 
 $pdo = db();
-app_require_owner_access();
+$canViewProfit = app_can_view_profit();
 load_ensure_schema($pdo);
 $success = flash_get('success');
 $error = flash_get('error');
@@ -35,6 +35,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $purchased = (float) ($row['purchased'] ?? 0);
         $sold = (float) ($row['sold'] ?? 0);
         $profit = (float) ($row['profit'] ?? 0);
+        if (!$canViewProfit) {
+            $existing = load_entry($pdo, $date, (string) $network);
+            $profit = (float) ($existing['profit'] ?? 0);
+        }
 
         load_upsert_entry($pdo, $date, (string) $network, $opening, $purchased, $sold, $profit);
     }
@@ -71,7 +75,9 @@ foreach ($networks as $n) {
     $totals['opening'] += $opening;
     $totals['purchased'] += $purchased;
     $totals['sold'] += $sold;
-    $totals['profit'] += $profit;
+    if ($canViewProfit) {
+        $totals['profit'] += $profit;
+    }
     $totals['closing'] += $closing;
 }
 
@@ -99,9 +105,11 @@ require_once __DIR__ . '/../includes/sidebar.php';
         <p class="text-gray-500 text-sm mb-0">Daily totals per network (no customer-wise entries)</p>
     </div>
     <div class="d-flex flex-wrap gap-2">
-        <a class="btn btn-secondary btn-sm" href="<?= h(app_url('load-management/report.php')) ?>">
-            <i data-lucide="bar-chart-3" class="w-4 h-4"></i> Reports
-        </a>
+        <?php if ($canViewProfit): ?>
+            <a class="btn btn-secondary btn-sm" href="<?= h(app_url('load-management/report.php')) ?>">
+                <i data-lucide="bar-chart-3" class="w-4 h-4"></i> Reports
+            </a>
+        <?php endif; ?>
     </div>
 </div>
 
@@ -150,14 +158,16 @@ require_once __DIR__ . '/../includes/sidebar.php';
                     </div>
                 </div>
             </div>
-            <div class="col-12 col-md-2">
-                <div class="card border-0 shadow-sm">
-                    <div class="card-body">
-                        <div class="text-muted small">Total Profit</div>
-                        <div class="h5 mb-0"><?= h(number_format($totals['profit'], 2)) ?></div>
+            <?php if ($canViewProfit): ?>
+                <div class="col-12 col-md-2">
+                    <div class="card border-0 shadow-sm">
+                        <div class="card-body">
+                            <div class="text-muted small">Total Profit</div>
+                            <div class="h5 mb-0"><?= h(number_format($totals['profit'], 2)) ?></div>
+                        </div>
                     </div>
                 </div>
-            </div>
+            <?php endif; ?>
             <div class="col-12 col-md-2">
                 <div class="card border-0 shadow-sm">
                     <div class="card-body">
@@ -182,7 +192,9 @@ require_once __DIR__ . '/../includes/sidebar.php';
                         <th class="text-end">Opening Balance</th>
                         <th class="text-end">Purchased Balance</th>
                         <th class="text-end">Sold Balance</th>
-                        <th class="text-end">Profit (manual)</th>
+                        <?php if ($canViewProfit): ?>
+                            <th class="text-end">Profit (manual)</th>
+                        <?php endif; ?>
                         <th class="text-end">Closing (auto)</th>
                     </tr>
                     </thead>
@@ -207,9 +219,11 @@ require_once __DIR__ . '/../includes/sidebar.php';
                             <td class="text-end">
                                 <input class="form-control form-control-sm text-end js-sold" type="number" step="0.01" name="entries[<?= h($n) ?>][sold]" value="<?= h((string) $sold) ?>">
                             </td>
-                            <td class="text-end">
-                                <input class="form-control form-control-sm text-end" type="number" step="0.01" name="entries[<?= h($n) ?>][profit]" value="<?= h((string) $profit) ?>">
-                            </td>
+                            <?php if ($canViewProfit): ?>
+                                <td class="text-end">
+                                    <input class="form-control form-control-sm text-end" type="number" step="0.01" name="entries[<?= h($n) ?>][profit]" value="<?= h((string) $profit) ?>">
+                                </td>
+                            <?php endif; ?>
                             <td class="text-end">
                                 <input class="form-control form-control-sm text-end js-closing" type="text" value="<?= h(number_format($closing, 2, '.', '')) ?>" readonly>
                             </td>
@@ -235,7 +249,9 @@ require_once __DIR__ . '/../includes/sidebar.php';
                     <th class="text-end">Opening</th>
                     <th class="text-end">Purchased</th>
                     <th class="text-end">Sold</th>
-                    <th class="text-end">Profit</th>
+                    <?php if ($canViewProfit): ?>
+                        <th class="text-end">Profit</th>
+                    <?php endif; ?>
                     <th class="text-end">Closing</th>
                 </tr>
                 </thead>
@@ -250,13 +266,15 @@ require_once __DIR__ . '/../includes/sidebar.php';
                         <td class="text-end"><?= h(number_format((float) $hrow['opening_total'], 2)) ?></td>
                         <td class="text-end"><?= h(number_format((float) $hrow['purchased_total'], 2)) ?></td>
                         <td class="text-end"><?= h(number_format((float) $hrow['sold_total'], 2)) ?></td>
-                        <td class="text-end"><?= h(number_format((float) $hrow['profit_total'], 2)) ?></td>
+                        <?php if ($canViewProfit): ?>
+                            <td class="text-end"><?= h(number_format((float) $hrow['profit_total'], 2)) ?></td>
+                        <?php endif; ?>
                         <td class="text-end"><?= h(number_format((float) $hrow['closing_total'], 2)) ?></td>
                     </tr>
                 <?php endforeach; ?>
                 <?php if (!$history): ?>
                     <tr>
-                        <td colspan="6" class="text-center text-muted py-4">No records yet.</td>
+                        <td colspan="<?= h((string) (5 + ($canViewProfit ? 1 : 0))) ?>" class="text-center text-muted py-4">No records yet.</td>
                     </tr>
                 <?php endif; ?>
                 </tbody>
