@@ -9,6 +9,7 @@ $pageTitle = 'Load Management - Shop Management';
 
 $pdo = db();
 $canViewProfit = app_can_view_profit();
+$canEditDelete = app_can_edit_delete_records();
 load_ensure_schema($pdo);
 $success = flash_get('success');
 $error = flash_get('error');
@@ -17,6 +18,37 @@ $networks = load_get_networks($pdo);
 $date = (string) ($_GET['date'] ?? date('Y-m-d'));
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $action = trim((string) ($_POST['action'] ?? 'save'));
+    if ($action === 'delete_day') {
+        if (!$canEditDelete) {
+            flash_set('error', 'Access denied.');
+            app_redirect('load-management/index.php');
+        }
+        $deleteDate = trim((string) ($_POST['delete_date'] ?? ''));
+        if ($deleteDate === '') {
+            flash_set('error', 'Date is required.');
+            app_redirect('load-management/index.php');
+        }
+
+        $stmt = $pdo->prepare("
+            SELECT id, network, date, opening_balance, purchased_balance, sold_balance, profit, closing_balance, created_at, updated_at
+            FROM load_entries
+            WHERE date = :date
+            ORDER BY network ASC, id ASC
+        ");
+        $stmt->execute([':date' => $deleteDate]);
+        $beforeRows = $stmt->fetchAll();
+
+        $stmt = $pdo->prepare("DELETE FROM load_entries WHERE date = :date");
+        $stmt->execute([':date' => $deleteDate]);
+
+        $entityId = (int) str_replace('-', '', $deleteDate);
+        app_audit_log('load_entries_day', $entityId, 'delete', ['date' => $deleteDate, 'rows' => $beforeRows], null);
+
+        flash_set('success', 'Load day deleted.');
+        app_redirect('load-management/index.php');
+    }
+
     $date = trim((string) ($_POST['date'] ?? date('Y-m-d')));
     $entries = $_POST['entries'] ?? [];
 
@@ -33,7 +65,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         $opening = (float) ($row['opening'] ?? 0);
         $purchased = (float) ($row['purchased'] ?? 0);
-        $sold = (float) ($row['sold'] ?? 0);
+        $closing = (float) ($row['closing'] ?? 0);
+        $sold = $opening + $purchased - $closing;
         $profit = (float) ($row['profit'] ?? 0);
         if (!$canViewProfit) {
             $existing = load_entry($pdo, $date, (string) $network);
@@ -71,7 +104,7 @@ foreach ($networks as $n) {
     $purchased = (float) ($e['purchased_balance'] ?? 0);
     $sold = (float) ($e['sold_balance'] ?? 0);
     $profit = (float) ($e['profit'] ?? 0);
-    $closing = $opening + $purchased - $sold;
+    $closing = (float) ($e['closing_balance'] ?? ($opening + $purchased - $sold));
     $totals['opening'] += $opening;
     $totals['purchased'] += $purchased;
     $totals['sold'] += $sold;
@@ -194,11 +227,11 @@ require_once __DIR__ . '/../includes/sidebar.php';
                         <th>Network</th>
                         <th class="text-end">Opening Balance</th>
                         <th class="text-end">Purchased Balance</th>
-                        <th class="text-end">Sold Balance</th>
+                        <th class="text-end">Sold (auto)</th>
                         <?php if ($canViewProfit): ?>
                             <th class="text-end">Profit (manual)</th>
                         <?php endif; ?>
-                        <th class="text-end">Closing (auto)</th>
+                        <th class="text-end">Closing</th>
                     </tr>
                     </thead>
                     <tbody>
@@ -207,9 +240,9 @@ require_once __DIR__ . '/../includes/sidebar.php';
                         $e = $entriesByNetwork[$n] ?? [];
                         $opening = (float) ($e['opening_balance'] ?? 0);
                         $purchased = (float) ($e['purchased_balance'] ?? 0);
-                        $sold = (float) ($e['sold_balance'] ?? 0);
+                        $closing = (float) ($e['closing_balance'] ?? 0);
+                        $sold = $opening + $purchased - $closing;
                         $profit = (float) ($e['profit'] ?? 0);
-                        $closing = $opening + $purchased - $sold;
                         ?>
                         <tr>
                             <td class="fw-semibold"><?= h($n) ?></td>
@@ -220,7 +253,7 @@ require_once __DIR__ . '/../includes/sidebar.php';
                                 <input class="form-control form-control-sm text-end js-purchased" type="number" step="0.01" name="entries[<?= h($n) ?>][purchased]" value="<?= h((string) $purchased) ?>">
                             </td>
                             <td class="text-end">
-                                <input class="form-control form-control-sm text-end js-sold" type="number" step="0.01" name="entries[<?= h($n) ?>][sold]" value="<?= h((string) $sold) ?>">
+                                <input class="form-control form-control-sm text-end js-sold" type="text" value="<?= h(number_format($sold, 2, '.', '')) ?>" readonly>
                             </td>
                             <?php if ($canViewProfit): ?>
                                 <td class="text-end">
@@ -228,7 +261,7 @@ require_once __DIR__ . '/../includes/sidebar.php';
                                 </td>
                             <?php endif; ?>
                             <td class="text-end">
-                                <input class="form-control form-control-sm text-end js-closing" type="text" value="<?= h(number_format($closing, 2, '.', '')) ?>" readonly>
+                                <input class="form-control form-control-sm text-end js-closing" type="number" step="0.01" name="entries[<?= h($n) ?>][closing]" value="<?= h(number_format($closing, 2, '.', '')) ?>">
                             </td>
                         </tr>
                     <?php endforeach; ?>
@@ -256,6 +289,9 @@ require_once __DIR__ . '/../includes/sidebar.php';
                         <th class="text-end">Profit</th>
                     <?php endif; ?>
                     <th class="text-end">Closing</th>
+                    <?php if ($canEditDelete): ?>
+                        <th class="text-end">Actions</th>
+                    <?php endif; ?>
                 </tr>
                 </thead>
                 <tbody>
@@ -273,11 +309,21 @@ require_once __DIR__ . '/../includes/sidebar.php';
                             <td class="text-end"><?= h(number_format((float) $hrow['profit_total'], 2)) ?></td>
                         <?php endif; ?>
                         <td class="text-end"><?= h(number_format((float) $hrow['closing_total'], 2)) ?></td>
+                        <?php if ($canEditDelete): ?>
+                            <td class="text-end">
+                                <a class="btn btn-outline-secondary btn-sm" href="<?= h(app_url('load-management/index.php?date=' . (string) $hrow['date'])) ?>">Edit</a>
+                                <form method="post" class="d-inline">
+                                    <input type="hidden" name="action" value="delete_day">
+                                    <input type="hidden" name="delete_date" value="<?= h((string) $hrow['date']) ?>">
+                                    <button class="btn btn-outline-danger btn-sm" onclick="return confirm('Delete all load entries for <?= h((string) $hrow['date']) ?>?')">Delete</button>
+                                </form>
+                            </td>
+                        <?php endif; ?>
                     </tr>
                 <?php endforeach; ?>
                 <?php if (!$history): ?>
                     <tr>
-                        <td colspan="<?= h((string) (5 + ($canViewProfit ? 1 : 0))) ?>" class="text-center text-muted py-4">No records yet.</td>
+                        <td colspan="<?= h((string) (5 + ($canViewProfit ? 1 : 0) + ($canEditDelete ? 1 : 0))) ?>" class="text-center text-muted py-4">No records yet.</td>
                     </tr>
                 <?php endif; ?>
                 </tbody>
@@ -290,10 +336,11 @@ require_once __DIR__ . '/../includes/sidebar.php';
     function recalcRow(tr) {
         const opening = parseFloat(tr.querySelector('.js-opening')?.value || '0') || 0;
         const purchased = parseFloat(tr.querySelector('.js-purchased')?.value || '0') || 0;
-        const sold = parseFloat(tr.querySelector('.js-sold')?.value || '0') || 0;
-        const closing = opening + purchased - sold;
+        const closing = parseFloat(tr.querySelector('.js-closing')?.value || '0') || 0;
+        const sold = opening + purchased - closing;
         const closingEl = tr.querySelector('.js-closing');
-        if (closingEl) closingEl.value = closing.toFixed(2);
+        const soldEl = tr.querySelector('.js-sold');
+        if (soldEl) soldEl.value = sold.toFixed(2);
     }
 
     document.querySelectorAll('#dailyLoadForm tbody tr').forEach(tr => {
