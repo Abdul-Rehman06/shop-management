@@ -12,6 +12,32 @@ function money($value): string
 $pdo = db();
 $canViewProfit = app_can_view_profit();
 
+$range = trim((string) ($_GET['range'] ?? 'today'));
+if (!in_array($range, ['today', '7days', 'month', 'custom'], true)) {
+    $range = 'today';
+}
+
+$today = date('Y-m-d');
+$fromDate = $today;
+$toDate = $today;
+if ($range === '7days') {
+    $fromDate = (new DateTimeImmutable('today'))->modify('-6 days')->format('Y-m-d');
+    $toDate = $today;
+} elseif ($range === 'month') {
+    $fromDate = (new DateTimeImmutable('first day of this month'))->format('Y-m-d');
+    $toDate = $today;
+} elseif ($range === 'custom') {
+    $fromRaw = trim((string) ($_GET['from'] ?? $today));
+    $toRaw = trim((string) ($_GET['to'] ?? $today));
+    $fromDate = preg_match('/^\d{4}-\d{2}-\d{2}$/', $fromRaw) === 1 ? $fromRaw : $today;
+    $toDate = preg_match('/^\d{4}-\d{2}-\d{2}$/', $toRaw) === 1 ? $toRaw : $today;
+}
+if ($fromDate > $toDate) {
+    [$fromDate, $toDate] = [$toDate, $fromDate];
+}
+
+$rangeLabel = $range === 'today' ? 'Today' : ($range === '7days' ? 'Last 7 Days' : ($range === 'month' ? 'This Month' : ($fromDate . ' to ' . $toDate)));
+
 $networks = ['Jazz', 'Zong', 'Ufone', 'Telenor'];
 
 $walletOpenForDate = function (PDO $pdo, int $accountId, string $date): float {
@@ -78,24 +104,26 @@ $walletOpenForDate = function (PDO $pdo, int $accountId, string $date): float {
     return (float) $stmt->fetchColumn();
 };
 
-$today = date('Y-m-d');
-$walletAll = ['opening' => 0.0, 'receiving' => 0.0, 'sending' => 0.0, 'closing' => 0.0];
+    $walletAll = ['opening' => 0.0, 'receiving' => 0.0, 'sending' => 0.0, 'closing' => 0.0];
 try {
     $stmt = $pdo->query("SELECT id FROM accounts WHERE status = 'active'");
     $accountIds = array_map(static fn (array $r): int => (int) ($r['id'] ?? 0), $stmt->fetchAll());
     $accountIds = array_values(array_filter($accountIds, static fn (int $x): bool => $x > 0));
 
     foreach ($accountIds as $aid) {
-        $opening = $walletOpenForDate($pdo, $aid, $today);
+        $opening = $walletOpenForDate($pdo, $aid, $fromDate);
 
         $stmt = $pdo->prepare("
             SELECT
                 COALESCE(SUM(CASE WHEN type = 'receiving' THEN amount ELSE 0 END), 0) AS receiving_total,
                 COALESCE(SUM(CASE WHEN type = 'sending' THEN amount ELSE 0 END), 0) AS sending_total
             FROM wallet_transactions
-            WHERE account_id = ? AND date = ? AND type IN ('receiving', 'sending')
+            WHERE account_id = ?
+              AND date >= ?
+              AND date <= ?
+              AND type IN ('receiving', 'sending')
         ");
-        $stmt->execute([$aid, $today]);
+        $stmt->execute([$aid, $fromDate, $toDate]);
         $r = $stmt->fetch() ?: [];
         $recv = (float) ($r['receiving_total'] ?? 0);
         $sent = (float) ($r['sending_total'] ?? 0);
@@ -105,6 +133,88 @@ try {
         $walletAll['sending'] += $sent;
         $walletAll['closing'] += ($opening + $recv - $sent);
     }
+} catch (Throwable $e) {
+}
+
+$rangeExpense = 0.0;
+$rangeSales = 0.0;
+$rangeProfit = 0.0;
+$rangeDealerPayments = 0.0;
+$rangeLoadSold = 0.0;
+$rangeUdharRecovery = 0.0;
+$rangeCreditAdvance = 0.0;
+
+try {
+    $stmt = $pdo->prepare("SELECT COALESCE(SUM(amount), 0) FROM expenses WHERE date >= :from AND date <= :to");
+    $stmt->execute([':from' => $fromDate, ':to' => $toDate]);
+    $rangeExpense = (float) $stmt->fetchColumn();
+} catch (Throwable $e) {
+}
+
+try {
+    $stmt = $pdo->prepare("
+        SELECT
+            COALESCE(SUM(s.quantity * s.sale_price), 0)
+        FROM sales s
+        WHERE s.created_at >= :from AND s.created_at <= :to
+    ");
+    $stmt->execute([':from' => $fromDate . ' 00:00:00', ':to' => $toDate . ' 23:59:59']);
+    $rangeSales = (float) $stmt->fetchColumn();
+} catch (Throwable $e) {
+}
+
+if ($canViewProfit) {
+    try {
+        $stmt = $pdo->prepare("
+            SELECT
+                COALESCE((SELECT SUM(profit) FROM sales WHERE created_at >= :from1 AND created_at <= :to1), 0)
+                + COALESCE((SELECT SUM(profit_adjustment) FROM sales_returns WHERE return_date >= :from2 AND return_date <= :to2), 0)
+        ");
+        $stmt->execute([
+            ':from1' => $fromDate . ' 00:00:00',
+            ':to1' => $toDate . ' 23:59:59',
+            ':from2' => $fromDate,
+            ':to2' => $toDate,
+        ]);
+        $rangeProfit = (float) $stmt->fetchColumn();
+    } catch (Throwable $e) {
+    }
+}
+
+try {
+    $stmt = $pdo->prepare("SELECT COALESCE(SUM(amount), 0) FROM dealer_payments WHERE payment_date >= :from AND payment_date <= :to");
+    $stmt->execute([':from' => $fromDate, ':to' => $toDate]);
+    $rangeDealerPayments = (float) $stmt->fetchColumn();
+} catch (Throwable $e) {
+}
+
+try {
+    $stmt = $pdo->prepare("SELECT COUNT(*) FROM load_customer_transactions WHERE txn_date >= :from AND txn_date <= :to");
+    $stmt->execute([':from' => $fromDate, ':to' => $toDate]);
+    $hasLoadTxn = (int) $stmt->fetchColumn() > 0;
+    if ($hasLoadTxn) {
+        $stmt = $pdo->prepare("SELECT COALESCE(SUM(amount), 0) FROM load_customer_transactions WHERE txn_date >= :from AND txn_date <= :to");
+        $stmt->execute([':from' => $fromDate, ':to' => $toDate]);
+        $rangeLoadSold = (float) $stmt->fetchColumn();
+    } else {
+        $stmt = $pdo->prepare("SELECT COALESCE(SUM(sold_balance), 0) FROM load_entries WHERE date >= :from AND date <= :to");
+        $stmt->execute([':from' => $fromDate, ':to' => $toDate]);
+        $rangeLoadSold = (float) $stmt->fetchColumn();
+    }
+} catch (Throwable $e) {
+}
+
+try {
+    $stmt = $pdo->prepare("SELECT COALESCE(SUM(amount), 0) FROM udhar_transactions WHERE txn_date >= :from AND txn_date <= :to AND txn_type = 'payment'");
+    $stmt->execute([':from' => $fromDate, ':to' => $toDate]);
+    $rangeUdharRecovery = (float) $stmt->fetchColumn();
+} catch (Throwable $e) {
+}
+
+try {
+    $stmt = $pdo->prepare("SELECT COALESCE(SUM(amount), 0) FROM credit_transactions WHERE txn_date >= :from AND txn_date <= :to AND txn_type = 'advance'");
+    $stmt->execute([':from' => $fromDate, ':to' => $toDate]);
+    $rangeCreditAdvance = (float) $stmt->fetchColumn();
 } catch (Throwable $e) {
 }
 
@@ -428,9 +538,9 @@ $extraHead = '<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/char
             <h1 class="text-3xl font-bold text-gray-900 tracking-tight mb-1">
                 Welcome back, <?= h((string) ($admin['name'] ?? 'Admin')) ?> 👋
             </h1>
-            <p class="text-gray-500">Here's what's happening in your shop today, <span class="font-medium text-brand-600"><?= date('F j, Y') ?></span>.</p>
+            <p class="text-gray-500">Reports view: <span class="font-medium text-brand-600"><?= h($rangeLabel) ?></span> <span class="text-gray-400">(<?= h($fromDate) ?> to <?= h($toDate) ?>)</span></p>
         </div>
-        <div class="flex flex-wrap gap-3 z-10">
+        <div class="flex flex-col gap-3 z-10">
             <?php if ($canViewProfit): ?>
                 <a href="<?= h(app_url('load-management/index.php')) ?>" class="btn btn-outline-primary bg-white hover:bg-brand-50">
                     <i data-lucide="smartphone" class="w-4 h-4"></i> Load Entry
@@ -442,6 +552,87 @@ $extraHead = '<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/char
             <a href="<?= h(app_url('sales/add.php')) ?>" class="btn btn-primary shadow-md hover:shadow-lg">
                 <i data-lucide="shopping-cart" class="w-4 h-4"></i> New Sale
             </a>
+
+            <form method="get" class="d-flex flex-wrap gap-2 align-items-end">
+                <div>
+                    <label class="form-label mb-1 small">Range</label>
+                    <select class="form-select form-select-sm" name="range">
+                        <option value="today" <?= $range === 'today' ? 'selected' : '' ?>>Today</option>
+                        <option value="7days" <?= $range === '7days' ? 'selected' : '' ?>>Last 7 Days</option>
+                        <option value="month" <?= $range === 'month' ? 'selected' : '' ?>>This Month</option>
+                        <option value="custom" <?= $range === 'custom' ? 'selected' : '' ?>>Custom</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="form-label mb-1 small">From</label>
+                    <input class="form-control form-control-sm" type="date" name="from" value="<?= h($fromDate) ?>">
+                </div>
+                <div>
+                    <label class="form-label mb-1 small">To</label>
+                    <input class="form-control form-control-sm" type="date" name="to" value="<?= h($toDate) ?>">
+                </div>
+                <div>
+                    <button class="btn btn-outline-secondary btn-sm">Apply</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<div class="mb-8">
+    <div class="card border-0 shadow-sm">
+        <div class="card-body">
+            <div class="d-flex flex-wrap gap-2 align-items-center justify-content-between mb-3">
+                <div class="fw-semibold">Reports Summary (<?= h($rangeLabel) ?>)</div>
+                <a class="btn btn-outline-secondary btn-sm" href="<?= h(app_url('reports/index.php?module=all&range=' . urlencode($range) . '&from=' . urlencode($fromDate) . '&to=' . urlencode($toDate))) ?>">View All Reports</a>
+            </div>
+
+            <div class="row g-3">
+                <div class="col-12 col-md-3">
+                    <div class="border rounded p-3 h-100">
+                        <div class="text-muted small">Sales</div>
+                        <div class="h5 mb-0">Rs <?= money($rangeSales) ?></div>
+                    </div>
+                </div>
+                <div class="col-12 col-md-3">
+                    <div class="border rounded p-3 h-100">
+                        <div class="text-muted small">Expenses</div>
+                        <div class="h5 mb-0">Rs <?= money($rangeExpense) ?></div>
+                    </div>
+                </div>
+                <div class="col-12 col-md-3">
+                    <div class="border rounded p-3 h-100">
+                        <div class="text-muted small">Load Sold</div>
+                        <div class="h5 mb-0">Rs <?= money($rangeLoadSold) ?></div>
+                    </div>
+                </div>
+                <div class="col-12 col-md-3">
+                    <div class="border rounded p-3 h-100">
+                        <div class="text-muted small">Dealer Payments</div>
+                        <div class="h5 mb-0">Rs <?= money($rangeDealerPayments) ?></div>
+                    </div>
+                </div>
+                <div class="col-12 col-md-3">
+                    <div class="border rounded p-3 h-100">
+                        <div class="text-muted small">Udhar Recovery</div>
+                        <div class="h5 mb-0">Rs <?= money($rangeUdharRecovery) ?></div>
+                    </div>
+                </div>
+                <div class="col-12 col-md-3">
+                    <div class="border rounded p-3 h-100">
+                        <div class="text-muted small">Credit Advance</div>
+                        <div class="h5 mb-0">Rs <?= money($rangeCreditAdvance) ?></div>
+                    </div>
+                </div>
+                <?php if ($canViewProfit): ?>
+                    <div class="col-12 col-md-3">
+                        <div class="border rounded p-3 h-100">
+                            <div class="text-muted small">Profit</div>
+                            <div class="h5 mb-0">Rs <?= money($rangeProfit) ?></div>
+                        </div>
+                    </div>
+                <?php endif; ?>
+            </div>
         </div>
     </div>
 </div>

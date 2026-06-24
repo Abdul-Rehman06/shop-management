@@ -5,12 +5,18 @@ declare(strict_types=1);
 function report_modules(): array
 {
     return [
+        'all' => 'All (Daily Summary)',
         'load' => 'Load',
+        'load_txn' => 'Load Transactions',
+        'wallet' => 'Mobile Accounts (Wallet)',
         'easypaisa' => 'EasyPaisa',
         'jazzcash' => 'JazzCash',
         'bank' => 'Bank Transfer',
         'expenses' => 'Expenses',
         'sales' => 'Sales',
+        'dealer_payments' => 'Dealer Payments',
+        'udhar' => 'Udhar Ledger',
+        'credit' => 'Credit (Advance)',
     ];
 }
 
@@ -26,16 +32,36 @@ function report_get_date(string $value, string $fallback): string
 function report_filters_from_request(): array
 {
     $today = date('Y-m-d');
+
+    $range = trim((string) ($_GET['range'] ?? 'today'));
+    if (!in_array($range, ['today', '7days', 'month', 'custom'], true)) {
+        $range = 'today';
+    }
+
+    $defaultFrom = $today;
+    $defaultTo = $today;
+    if ($range === '7days') {
+        $defaultFrom = (new DateTimeImmutable('today'))->modify('-6 days')->format('Y-m-d');
+        $defaultTo = $today;
+    } elseif ($range === 'month') {
+        $defaultFrom = (new DateTimeImmutable('first day of this month'))->format('Y-m-d');
+        $defaultTo = $today;
+    }
+
     $from = report_get_date((string) ($_GET['from'] ?? ''), $today);
     $to = report_get_date((string) ($_GET['to'] ?? ''), $today);
+    if ($range !== 'custom') {
+        $from = $defaultFrom;
+        $to = $defaultTo;
+    }
     if ($from > $to) {
         [$from, $to] = [$to, $from];
     }
 
-    $module = trim((string) ($_GET['module'] ?? 'load'));
+    $module = trim((string) ($_GET['module'] ?? 'all'));
     $modules = report_modules();
     if (!isset($modules[$module])) {
-        $module = 'load';
+        $module = 'all';
     }
 
     $network = trim((string) ($_GET['network'] ?? ''));
@@ -47,12 +73,18 @@ function report_filters_from_request(): array
         'to' => $to,
         'network' => $network,
         'type' => $type,
+        'range' => $range,
     ];
 }
 
 function report_load_networks(PDO $pdo): array
 {
-    $rows = $pdo->query('SELECT network_name FROM load_networks ORDER BY network_name ASC')->fetchAll();
+    $rows = [];
+    try {
+        $rows = $pdo->query('SELECT network_name FROM load_networks ORDER BY network_name ASC')->fetchAll();
+    } catch (Throwable $e) {
+        $rows = [];
+    }
     $networks = [];
     foreach ($rows as $r) {
         $n = trim((string) ($r['network_name'] ?? ''));
@@ -73,6 +105,220 @@ function report_fetch(PDO $pdo, array $filters): array
     $to = $filters['to'];
     $network = $filters['network'];
     $type = $filters['type'];
+
+    if ($module === 'all') {
+        return [
+            'headers' => [],
+            'rows' => [],
+            'summary' => [],
+        ];
+    }
+
+    if ($module === 'wallet') {
+        $params = [':from' => $from, ':to' => $to];
+        $stmt = $pdo->prepare("
+            SELECT wt.date, a.account_type, a.account_name, wt.type, wt.customer_name, wt.number, wt.transaction_id, wt.amount, wt.charges, wt.remarks
+            FROM wallet_transactions wt
+            JOIN accounts a ON a.id = wt.account_id
+            WHERE wt.date >= :from AND wt.date <= :to
+              AND wt.type IN ('receiving','sending')
+              AND a.account_type IN ('easypaisa','jazzcash','bank','cash')
+            ORDER BY wt.date ASC, wt.id ASC
+        ");
+        $stmt->execute($params);
+        $rows = $stmt->fetchAll();
+
+        $receiving = 0.0;
+        $sending = 0.0;
+        $commission = 0.0;
+        foreach ($rows as $r) {
+            if ((string) ($r['type'] ?? '') === 'receiving') {
+                $receiving += (float) ($r['amount'] ?? 0);
+            } else {
+                $sending += (float) ($r['amount'] ?? 0);
+            }
+            $commission += (float) ($r['charges'] ?? 0);
+        }
+
+        return [
+            'headers' => ['Date', 'Account Type', 'Account', 'Type', 'Customer', 'Number', 'Transaction ID', 'Amount', 'Commission', 'Note'],
+            'rows' => array_map(static function (array $r): array {
+                return [
+                    (string) ($r['date'] ?? ''),
+                    (string) ($r['account_type'] ?? ''),
+                    (string) ($r['account_name'] ?? ''),
+                    (string) ($r['type'] ?? ''),
+                    (string) ($r['customer_name'] ?? ''),
+                    (string) ($r['number'] ?? ''),
+                    (string) ($r['transaction_id'] ?? ''),
+                    number_format((float) ($r['amount'] ?? 0), 2, '.', ''),
+                    number_format((float) ($r['charges'] ?? 0), 2, '.', ''),
+                    (string) ($r['remarks'] ?? ''),
+                ];
+            }, $rows),
+            'summary' => [
+                'Receiving' => number_format($receiving, 2),
+                'Sending' => number_format($sending, 2),
+                'Commission' => number_format($commission, 2),
+                'Net' => number_format($receiving - $sending, 2),
+            ],
+        ];
+    }
+
+    if ($module === 'dealer_payments') {
+        $stmt = $pdo->prepare("
+            SELECT payment_date, dealer_name, network, amount, notes, created_at
+            FROM dealer_payments
+            WHERE payment_date >= :from AND payment_date <= :to
+            ORDER BY payment_date ASC, id ASC
+        ");
+        $stmt->execute([':from' => $from, ':to' => $to]);
+        $rows = $stmt->fetchAll();
+
+        $total = 0.0;
+        foreach ($rows as $r) {
+            $total += (float) ($r['amount'] ?? 0);
+        }
+
+        return [
+            'headers' => ['Date', 'Dealer', 'Network', 'Amount', 'Notes', 'Created At'],
+            'rows' => array_map(static function (array $r): array {
+                return [
+                    (string) ($r['payment_date'] ?? ''),
+                    (string) ($r['dealer_name'] ?? ''),
+                    (string) ($r['network'] ?? ''),
+                    number_format((float) ($r['amount'] ?? 0), 2, '.', ''),
+                    (string) ($r['notes'] ?? ''),
+                    (string) ($r['created_at'] ?? ''),
+                ];
+            }, $rows),
+            'summary' => [
+                'Total Payments' => number_format($total, 2),
+            ],
+        ];
+    }
+
+    if ($module === 'udhar') {
+        $stmt = $pdo->prepare("
+            SELECT ut.txn_date, uc.name, uc.phone, ut.txn_type, ut.amount, ut.notes, ut.created_at
+            FROM udhar_transactions ut
+            JOIN udhar_customers uc ON uc.id = ut.udhar_id
+            WHERE ut.txn_date >= :from AND ut.txn_date <= :to
+            ORDER BY ut.txn_date ASC, ut.id ASC
+        ");
+        $stmt->execute([':from' => $from, ':to' => $to]);
+        $rows = $stmt->fetchAll();
+
+        $udhar = 0.0;
+        $paid = 0.0;
+        foreach ($rows as $r) {
+            if ((string) ($r['txn_type'] ?? '') === 'udhar') {
+                $udhar += (float) ($r['amount'] ?? 0);
+            } else {
+                $paid += (float) ($r['amount'] ?? 0);
+            }
+        }
+
+        return [
+            'headers' => ['Date', 'Customer', 'Phone', 'Type', 'Amount', 'Notes', 'Created At'],
+            'rows' => array_map(static function (array $r): array {
+                return [
+                    (string) ($r['txn_date'] ?? ''),
+                    (string) ($r['name'] ?? ''),
+                    (string) ($r['phone'] ?? ''),
+                    (string) ($r['txn_type'] ?? ''),
+                    number_format((float) ($r['amount'] ?? 0), 2, '.', ''),
+                    (string) ($r['notes'] ?? ''),
+                    (string) ($r['created_at'] ?? ''),
+                ];
+            }, $rows),
+            'summary' => [
+                'Udhar (+)' => number_format($udhar, 2),
+                'Payment (-)' => number_format($paid, 2),
+                'Balance' => number_format($udhar - $paid, 2),
+            ],
+        ];
+    }
+
+    if ($module === 'credit') {
+        $stmt = $pdo->prepare("
+            SELECT ct.txn_date, cc.name, cc.phone, ct.txn_type, ct.amount, ct.notes, ct.created_at
+            FROM credit_transactions ct
+            JOIN credit_customers cc ON cc.id = ct.customer_id
+            WHERE ct.txn_date >= :from AND ct.txn_date <= :to
+            ORDER BY ct.txn_date ASC, ct.id ASC
+        ");
+        $stmt->execute([':from' => $from, ':to' => $to]);
+        $rows = $stmt->fetchAll();
+
+        $advance = 0.0;
+        $used = 0.0;
+        foreach ($rows as $r) {
+            if ((string) ($r['txn_type'] ?? '') === 'advance') {
+                $advance += (float) ($r['amount'] ?? 0);
+            } else {
+                $used += (float) ($r['amount'] ?? 0);
+            }
+        }
+
+        return [
+            'headers' => ['Date', 'Customer', 'Phone', 'Type', 'Amount', 'Notes', 'Created At'],
+            'rows' => array_map(static function (array $r): array {
+                return [
+                    (string) ($r['txn_date'] ?? ''),
+                    (string) ($r['name'] ?? ''),
+                    (string) ($r['phone'] ?? ''),
+                    (string) ($r['txn_type'] ?? ''),
+                    number_format((float) ($r['amount'] ?? 0), 2, '.', ''),
+                    (string) ($r['notes'] ?? ''),
+                    (string) ($r['created_at'] ?? ''),
+                ];
+            }, $rows),
+            'summary' => [
+                'Advance (+)' => number_format($advance, 2),
+                'Used (-)' => number_format($used, 2),
+                'Remaining' => number_format($advance - $used, 2),
+            ],
+        ];
+    }
+
+    if ($module === 'load_txn') {
+        $stmt = $pdo->prepare("
+            SELECT txn_date, network, customer_name, customer_phone, amount, profit, notes, created_at
+            FROM load_customer_transactions
+            WHERE txn_date >= :from AND txn_date <= :to
+            ORDER BY txn_date ASC, id ASC
+        ");
+        $stmt->execute([':from' => $from, ':to' => $to]);
+        $rows = $stmt->fetchAll();
+
+        $amountTotal = 0.0;
+        $profitTotal = 0.0;
+        foreach ($rows as $r) {
+            $amountTotal += (float) ($r['amount'] ?? 0);
+            $profitTotal += (float) ($r['profit'] ?? 0);
+        }
+
+        return [
+            'headers' => ['Date', 'Network', 'Customer', 'Phone', 'Amount', 'Profit', 'Notes', 'Created At'],
+            'rows' => array_map(static function (array $r): array {
+                return [
+                    (string) ($r['txn_date'] ?? ''),
+                    (string) ($r['network'] ?? ''),
+                    (string) ($r['customer_name'] ?? ''),
+                    (string) ($r['customer_phone'] ?? ''),
+                    number_format((float) ($r['amount'] ?? 0), 2, '.', ''),
+                    number_format((float) ($r['profit'] ?? 0), 2, '.', ''),
+                    (string) ($r['notes'] ?? ''),
+                    (string) ($r['created_at'] ?? ''),
+                ];
+            }, $rows),
+            'summary' => [
+                'Total Amount' => number_format($amountTotal, 2),
+                'Total Profit' => number_format($profitTotal, 2),
+            ],
+        ];
+    }
 
     if ($module === 'load') {
         $params = [':from' => $from, ':to' => $to];
