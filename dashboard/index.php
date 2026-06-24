@@ -531,32 +531,40 @@ $extraHead = '<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/char
 <?php require_once __DIR__ . '/../includes/header.php'; ?>
 <?php require_once __DIR__ . '/../includes/sidebar.php'; ?>
 
-<div class="mb-8">
-    <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-6 rounded-2xl border border-gray-200 shadow-sm relative overflow-hidden">
-        <div class="absolute right-0 top-0 w-64 h-64 bg-brand-50 rounded-full blur-3xl -z-10 translate-x-1/2 -translate-y-1/2"></div>
-        <div>
-            <h1 class="text-3xl font-bold text-gray-900 tracking-tight mb-1">
+<div class="mb-8 animate-slide-up stagger-1">
+    <div class="flex flex-col md:flex-row md:items-center justify-between gap-6 glass-card p-8 rounded-3xl relative overflow-hidden group">
+        <div class="absolute right-0 top-0 w-96 h-96 bg-gradient-premium rounded-full blur-[80px] opacity-10 group-hover:opacity-20 transition-opacity duration-700 -translate-y-1/2 translate-x-1/3"></div>
+        <div class="absolute left-0 bottom-0 w-64 h-64 bg-pink-500 rounded-full blur-[80px] opacity-10 group-hover:opacity-20 transition-opacity duration-700 translate-y-1/3 -translate-x-1/3"></div>
+        
+        <div class="relative z-10">
+            <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-brand-50 text-brand-600 text-xs font-bold uppercase tracking-wider mb-3">
+                <span class="w-2 h-2 rounded-full bg-brand-500 animate-pulse"></span> Live Overview
+            </div>
+            <h1 class="page-header-title mb-2">
                 Welcome back, <?= h((string) ($admin['name'] ?? 'Admin')) ?> 👋
             </h1>
-            <p class="text-gray-500">Reports view: <span class="font-medium text-brand-600"><?= h($rangeLabel) ?></span> <span class="text-gray-400">(<?= h($fromDate) ?> to <?= h($toDate) ?>)</span></p>
+            <p class="text-gray-500 text-lg">Reports view: <span class="font-bold text-transparent bg-clip-text bg-gradient-premium"><?= h($rangeLabel) ?></span> <span class="text-gray-400 text-sm">(<?= h($fromDate) ?> to <?= h($toDate) ?>)</span></p>
         </div>
-        <div class="flex flex-col gap-3 z-10">
-            <?php if ($canViewProfit): ?>
-                <a href="<?= h(app_url('load-management/index.php')) ?>" class="btn btn-outline-primary bg-white hover:bg-brand-50">
-                    <i data-lucide="smartphone" class="w-4 h-4"></i> Load Entry
+        
+        <div class="flex flex-col gap-4 relative z-10">
+            <div class="flex flex-wrap gap-3 justify-end">
+                <?php if ($canViewProfit): ?>
+                    <a href="<?= h(app_url('load-management/index.php')) ?>" class="btn btn-outline-primary bg-white/50 backdrop-blur-sm hover:bg-brand-50">
+                        <i data-lucide="smartphone" class="w-4 h-4"></i> Load Entry
+                    </a>
+                <?php endif; ?>
+                <a href="<?= h(app_url('expenses/add.php')) ?>" class="btn btn-outline-danger bg-white/50 backdrop-blur-sm hover:bg-red-50">
+                    <i data-lucide="receipt" class="w-4 h-4"></i> Add Expense
                 </a>
-            <?php endif; ?>
-            <a href="<?= h(app_url('expenses/add.php')) ?>" class="btn btn-outline-danger bg-white hover:bg-red-50">
-                <i data-lucide="receipt" class="w-4 h-4"></i> Add Expense
-            </a>
-            <a href="<?= h(app_url('sales/add.php')) ?>" class="btn btn-primary shadow-md hover:shadow-lg">
-                <i data-lucide="shopping-cart" class="w-4 h-4"></i> New Sale
-            </a>
+                <a href="<?= h(app_url('sales/add.php')) ?>" class="btn btn-gradient shadow-glow">
+                    <i data-lucide="shopping-cart" class="w-4 h-4"></i> New Sale
+                </a>
+            </div>
 
-            <form method="get" class="d-flex flex-wrap gap-2 align-items-end">
+            <form method="get" class="flex flex-wrap gap-3 items-end bg-white/40 p-3 rounded-2xl border border-white/50 backdrop-blur-md shadow-sm">
                 <div>
-                    <label class="form-label mb-1 small">Range</label>
-                    <select class="form-select form-select-sm" name="range">
+                    <label class="form-label text-xs uppercase tracking-wider text-gray-500 mb-1 block">Range</label>
+                    <select class="form-select form-select-sm border-0 bg-white/80 shadow-sm rounded-xl" name="range">
                         <option value="today" <?= $range === 'today' ? 'selected' : '' ?>>Today</option>
                         <option value="7days" <?= $range === '7days' ? 'selected' : '' ?>>Last 7 Days</option>
                         <option value="month" <?= $range === 'month' ? 'selected' : '' ?>>This Month</option>
@@ -564,425 +572,488 @@ $extraHead = '<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/char
                     </select>
                 </div>
                 <div>
-                    <label class="form-label mb-1 small">From</label>
-                    <input class="form-control form-control-sm" type="date" name="from" value="<?= h($fromDate) ?>">
+                    <label class="form-label text-xs uppercase tracking-wider text-gray-500 mb-1 block">From</label>
+                    <input class="form-control form-control-sm border-0 bg-white/80 shadow-sm rounded-xl" type="date" name="from" value="<?= h($fromDate) ?>">
                 </div>
                 <div>
-                    <label class="form-label mb-1 small">To</label>
-                    <input class="form-control form-control-sm" type="date" name="to" value="<?= h($toDate) ?>">
+                    <label class="form-label text-xs uppercase tracking-wider text-gray-500 mb-1 block">To</label>
+                    <input class="form-control form-control-sm border-0 bg-white/80 shadow-sm rounded-xl" type="date" name="to" value="<?= h($toDate) ?>">
                 </div>
                 <div>
-                    <button class="btn btn-outline-secondary btn-sm">Apply</button>
+                    <button class="btn btn-outline-secondary btn-sm bg-white/80 border-0 shadow-sm rounded-xl hover:bg-gray-100">Apply Filter</button>
                 </div>
             </form>
         </div>
     </div>
 </div>
 
-<div class="mb-8">
-    <div class="card border-0 shadow-sm">
-        <div class="card-body">
-            <div class="d-flex flex-wrap gap-2 align-items-center justify-content-between mb-3">
-                <div class="fw-semibold">Reports Summary (<?= h($rangeLabel) ?>)</div>
-                <a class="btn btn-outline-secondary btn-sm" href="<?= h(app_url('reports/index.php?module=all&range=' . urlencode($range) . '&from=' . urlencode($fromDate) . '&to=' . urlencode($toDate))) ?>">View All Reports</a>
+<div class="mb-8 animate-slide-up stagger-2">
+    <div class="glass-card rounded-3xl p-6">
+        <div class="d-flex flex-wrap gap-3 align-items-center justify-content-between mb-5">
+            <div class="flex items-center gap-3">
+                <div class="p-2.5 bg-gradient-premium rounded-xl text-white shadow-sm">
+                    <i data-lucide="pie-chart" class="w-5 h-5"></i>
+                </div>
+                <h2 class="text-xl font-bold text-gray-900 m-0">Reports Summary <span class="text-sm font-normal text-gray-500 bg-gray-100 px-2 py-1 rounded-lg ml-2"><?= h($rangeLabel) ?></span></h2>
             </div>
+            <a class="btn btn-outline-primary btn-sm rounded-xl bg-brand-50 border-0" href="<?= h(app_url('reports/index.php?module=all&range=' . urlencode($range) . '&from=' . urlencode($fromDate) . '&to=' . urlencode($toDate))) ?>">
+                View Detailed Reports <i data-lucide="arrow-right" class="w-4 h-4"></i>
+            </a>
+        </div>
 
-            <div class="row g-3">
-                <div class="col-12 col-md-3">
-                    <div class="border rounded p-3 h-100">
-                        <div class="text-muted small">Sales</div>
-                        <div class="h5 mb-0">Rs <?= money($rangeSales) ?></div>
-                    </div>
-                </div>
-                <div class="col-12 col-md-3">
-                    <div class="border rounded p-3 h-100">
-                        <div class="text-muted small">Expenses</div>
-                        <div class="h5 mb-0">Rs <?= money($rangeExpense) ?></div>
-                    </div>
-                </div>
-                <div class="col-12 col-md-3">
-                    <div class="border rounded p-3 h-100">
-                        <div class="text-muted small">Load Sold</div>
-                        <div class="h5 mb-0">Rs <?= money($rangeLoadSold) ?></div>
-                    </div>
-                </div>
-                <div class="col-12 col-md-3">
-                    <div class="border rounded p-3 h-100">
-                        <div class="text-muted small">Dealer Payments</div>
-                        <div class="h5 mb-0">Rs <?= money($rangeDealerPayments) ?></div>
-                    </div>
-                </div>
-                <div class="col-12 col-md-3">
-                    <div class="border rounded p-3 h-100">
-                        <div class="text-muted small">Udhar Recovery</div>
-                        <div class="h5 mb-0">Rs <?= money($rangeUdharRecovery) ?></div>
-                    </div>
-                </div>
-                <div class="col-12 col-md-3">
-                    <div class="border rounded p-3 h-100">
-                        <div class="text-muted small">Credit Advance</div>
-                        <div class="h5 mb-0">Rs <?= money($rangeCreditAdvance) ?></div>
-                    </div>
-                </div>
-                <?php if ($canViewProfit): ?>
-                    <div class="col-12 col-md-3">
-                        <div class="border rounded p-3 h-100">
-                            <div class="text-muted small">Profit</div>
-                            <div class="h5 mb-0">Rs <?= money($rangeProfit) ?></div>
+        <div class="row g-4">
+            <div class="col-12 col-sm-6 col-md-4 col-lg-3">
+                <div class="bg-white/60 backdrop-blur-sm border border-white rounded-2xl p-4 h-100 shadow-sm hover:shadow-md transition-shadow group">
+                    <div class="flex items-center gap-3 mb-2">
+                        <div class="w-8 h-8 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center group-hover:scale-110 transition-transform">
+                            <i data-lucide="shopping-bag" class="w-4 h-4"></i>
                         </div>
+                        <div class="text-sm font-semibold text-gray-500 uppercase tracking-wider">Sales</div>
                     </div>
-                <?php endif; ?>
+                    <div class="text-2xl font-bold text-gray-900">Rs <?= money($rangeSales) ?></div>
+                </div>
             </div>
+            <div class="col-12 col-sm-6 col-md-4 col-lg-3">
+                <div class="bg-white/60 backdrop-blur-sm border border-white rounded-2xl p-4 h-100 shadow-sm hover:shadow-md transition-shadow group">
+                    <div class="flex items-center gap-3 mb-2">
+                        <div class="w-8 h-8 rounded-full bg-red-100 text-red-600 flex items-center justify-center group-hover:scale-110 transition-transform">
+                            <i data-lucide="receipt" class="w-4 h-4"></i>
+                        </div>
+                        <div class="text-sm font-semibold text-gray-500 uppercase tracking-wider">Expenses</div>
+                    </div>
+                    <div class="text-2xl font-bold text-gray-900">Rs <?= money($rangeExpense) ?></div>
+                </div>
+            </div>
+            <div class="col-12 col-sm-6 col-md-4 col-lg-3">
+                <div class="bg-white/60 backdrop-blur-sm border border-white rounded-2xl p-4 h-100 shadow-sm hover:shadow-md transition-shadow group">
+                    <div class="flex items-center gap-3 mb-2">
+                        <div class="w-8 h-8 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center group-hover:scale-110 transition-transform">
+                            <i data-lucide="smartphone" class="w-4 h-4"></i>
+                        </div>
+                        <div class="text-sm font-semibold text-gray-500 uppercase tracking-wider">Load Sold</div>
+                    </div>
+                    <div class="text-2xl font-bold text-gray-900">Rs <?= money($rangeLoadSold) ?></div>
+                </div>
+            </div>
+            <div class="col-12 col-sm-6 col-md-4 col-lg-3">
+                <div class="bg-white/60 backdrop-blur-sm border border-white rounded-2xl p-4 h-100 shadow-sm hover:shadow-md transition-shadow group">
+                    <div class="flex items-center gap-3 mb-2">
+                        <div class="w-8 h-8 rounded-full bg-amber-100 text-amber-600 flex items-center justify-center group-hover:scale-110 transition-transform">
+                            <i data-lucide="users" class="w-4 h-4"></i>
+                        </div>
+                        <div class="text-sm font-semibold text-gray-500 uppercase tracking-wider">Dealer Payments</div>
+                    </div>
+                    <div class="text-2xl font-bold text-gray-900">Rs <?= money($rangeDealerPayments) ?></div>
+                </div>
+            </div>
+            <div class="col-12 col-sm-6 col-md-4 col-lg-3">
+                <div class="bg-white/60 backdrop-blur-sm border border-white rounded-2xl p-4 h-100 shadow-sm hover:shadow-md transition-shadow group">
+                    <div class="flex items-center gap-3 mb-2">
+                        <div class="w-8 h-8 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center group-hover:scale-110 transition-transform">
+                            <i data-lucide="hand-coins" class="w-4 h-4"></i>
+                        </div>
+                        <div class="text-sm font-semibold text-gray-500 uppercase tracking-wider">Udhar Recovery</div>
+                    </div>
+                    <div class="text-2xl font-bold text-gray-900">Rs <?= money($rangeUdharRecovery) ?></div>
+                </div>
+            </div>
+            <div class="col-12 col-sm-6 col-md-4 col-lg-3">
+                <div class="bg-white/60 backdrop-blur-sm border border-white rounded-2xl p-4 h-100 shadow-sm hover:shadow-md transition-shadow group">
+                    <div class="flex items-center gap-3 mb-2">
+                        <div class="w-8 h-8 rounded-full bg-purple-100 text-purple-600 flex items-center justify-center group-hover:scale-110 transition-transform">
+                            <i data-lucide="circle-dollar-sign" class="w-4 h-4"></i>
+                        </div>
+                        <div class="text-sm font-semibold text-gray-500 uppercase tracking-wider">Credit Advance</div>
+                    </div>
+                    <div class="text-2xl font-bold text-gray-900">Rs <?= money($rangeCreditAdvance) ?></div>
+                </div>
+            </div>
+            <?php if ($canViewProfit): ?>
+                <div class="col-12 col-sm-6 col-md-4 col-lg-3">
+                    <div class="bg-gradient-to-br from-emerald-50 to-teal-50 border border-emerald-100 rounded-2xl p-4 h-100 shadow-sm hover:shadow-md transition-shadow group">
+                        <div class="flex items-center gap-3 mb-2">
+                            <div class="w-8 h-8 rounded-full bg-emerald-500 text-white flex items-center justify-center group-hover:scale-110 transition-transform shadow-sm">
+                                <i data-lucide="trending-up" class="w-4 h-4"></i>
+                            </div>
+                            <div class="text-sm font-bold text-emerald-700 uppercase tracking-wider">Total Profit</div>
+                        </div>
+                        <div class="text-2xl font-bold text-emerald-700">Rs <?= money($rangeProfit) ?></div>
+                    </div>
+                </div>
+            <?php endif; ?>
         </div>
     </div>
 </div>
 
-<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-    <div class="glass-card rounded-2xl p-6 relative overflow-hidden group hover:-translate-y-1 transition-all duration-300">
-        <div class="absolute -right-6 -top-6 w-24 h-24 bg-gray-50 rounded-full group-hover:scale-150 transition-transform duration-500 ease-out z-0"></div>
+<div class="flex items-center gap-3 mb-6 animate-slide-up stagger-3">
+    <div class="h-8 w-1.5 bg-gradient-premium rounded-full"></div>
+    <h2 class="text-2xl font-bold text-gray-900 m-0">Wallets Overview</h2>
+</div>
+
+<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-10 animate-slide-up stagger-3">
+    <div class="glass-card rounded-3xl p-6 relative overflow-hidden group">
+        <div class="absolute -right-6 -top-6 w-32 h-32 bg-gray-50 rounded-full group-hover:scale-150 transition-transform duration-700 ease-out z-0 opacity-50"></div>
         <div class="relative z-10">
-            <div class="flex items-center justify-between mb-4">
-                <div class="text-sm font-semibold text-gray-500 uppercase tracking-wider">Total Opening</div>
-                <div class="p-2 bg-gray-100 text-gray-700 rounded-lg"><i data-lucide="layers" class="w-5 h-5"></i></div>
+            <div class="flex items-center justify-between mb-6">
+                <div class="text-xs font-bold text-gray-500 uppercase tracking-widest">Total Opening</div>
+                <div class="p-2.5 bg-gray-100 text-gray-700 rounded-xl group-hover:bg-gray-200 transition-colors"><i data-lucide="layers" class="w-5 h-5"></i></div>
             </div>
-            <div class="text-3xl font-bold text-gray-900 tracking-tight">Rs <?= money((float) ($walletAll['opening'] ?? 0)) ?></div>
+            <div class="text-3xl font-extrabold text-gray-900 tracking-tight">Rs <?= money((float) ($walletAll['opening'] ?? 0)) ?></div>
         </div>
     </div>
 
-    <div class="glass-card rounded-2xl p-6 relative overflow-hidden group hover:-translate-y-1 transition-all duration-300">
-        <div class="absolute -right-6 -top-6 w-24 h-24 bg-emerald-50 rounded-full group-hover:scale-150 transition-transform duration-500 ease-out z-0"></div>
+    <div class="glass-card rounded-3xl p-6 relative overflow-hidden group">
+        <div class="absolute -right-6 -top-6 w-32 h-32 bg-emerald-50 rounded-full group-hover:scale-150 transition-transform duration-700 ease-out z-0 opacity-50"></div>
         <div class="relative z-10">
-            <div class="flex items-center justify-between mb-4">
-                <div class="text-sm font-semibold text-gray-500 uppercase tracking-wider">Total Receiving</div>
-                <div class="p-2 bg-emerald-100 text-emerald-600 rounded-lg"><i data-lucide="arrow-down-left" class="w-5 h-5"></i></div>
+            <div class="flex items-center justify-between mb-6">
+                <div class="text-xs font-bold text-gray-500 uppercase tracking-widest">Total Receiving</div>
+                <div class="p-2.5 bg-emerald-100 text-emerald-600 rounded-xl group-hover:bg-emerald-200 transition-colors"><i data-lucide="arrow-down-left" class="w-5 h-5"></i></div>
             </div>
-            <div class="text-3xl font-bold text-gray-900 tracking-tight">Rs <?= money((float) ($walletAll['receiving'] ?? 0)) ?></div>
+            <div class="text-3xl font-extrabold text-gray-900 tracking-tight">Rs <?= money((float) ($walletAll['receiving'] ?? 0)) ?></div>
         </div>
     </div>
 
-    <div class="glass-card rounded-2xl p-6 relative overflow-hidden group hover:-translate-y-1 transition-all duration-300">
-        <div class="absolute -right-6 -top-6 w-24 h-24 bg-red-50 rounded-full group-hover:scale-150 transition-transform duration-500 ease-out z-0"></div>
+    <div class="glass-card rounded-3xl p-6 relative overflow-hidden group">
+        <div class="absolute -right-6 -top-6 w-32 h-32 bg-red-50 rounded-full group-hover:scale-150 transition-transform duration-700 ease-out z-0 opacity-50"></div>
         <div class="relative z-10">
-            <div class="flex items-center justify-between mb-4">
-                <div class="text-sm font-semibold text-gray-500 uppercase tracking-wider">Total Sending</div>
-                <div class="p-2 bg-red-100 text-red-600 rounded-lg"><i data-lucide="arrow-up-right" class="w-5 h-5"></i></div>
+            <div class="flex items-center justify-between mb-6">
+                <div class="text-xs font-bold text-gray-500 uppercase tracking-widest">Total Sending</div>
+                <div class="p-2.5 bg-red-100 text-red-600 rounded-xl group-hover:bg-red-200 transition-colors"><i data-lucide="arrow-up-right" class="w-5 h-5"></i></div>
             </div>
-            <div class="text-3xl font-bold text-gray-900 tracking-tight">Rs <?= money((float) ($walletAll['sending'] ?? 0)) ?></div>
+            <div class="text-3xl font-extrabold text-gray-900 tracking-tight">Rs <?= money((float) ($walletAll['sending'] ?? 0)) ?></div>
         </div>
     </div>
 
-    <div class="glass-card rounded-2xl p-6 relative overflow-hidden group hover:-translate-y-1 transition-all duration-300">
-        <div class="absolute -right-6 -top-6 w-24 h-24 bg-brand-50 rounded-full group-hover:scale-150 transition-transform duration-500 ease-out z-0"></div>
+    <div class="glass-card rounded-3xl p-6 relative overflow-hidden group">
+        <div class="absolute -right-6 -top-6 w-32 h-32 bg-brand-50 rounded-full group-hover:scale-150 transition-transform duration-700 ease-out z-0 opacity-50"></div>
         <div class="relative z-10">
-            <div class="flex items-center justify-between mb-4">
-                <div class="text-sm font-semibold text-gray-500 uppercase tracking-wider">Total Closing</div>
-                <div class="p-2 bg-brand-100 text-brand-600 rounded-lg"><i data-lucide="wallet" class="w-5 h-5"></i></div>
+            <div class="flex items-center justify-between mb-6">
+                <div class="text-xs font-bold text-gray-500 uppercase tracking-widest">Total Closing</div>
+                <div class="p-2.5 bg-brand-100 text-brand-600 rounded-xl group-hover:bg-brand-200 transition-colors"><i data-lucide="wallet" class="w-5 h-5"></i></div>
             </div>
-            <div class="text-3xl font-bold text-gray-900 tracking-tight">Rs <?= money((float) ($walletAll['closing'] ?? 0)) ?></div>
+            <div class="text-3xl font-extrabold text-gray-900 tracking-tight text-transparent bg-clip-text bg-gradient-premium">Rs <?= money((float) ($walletAll['closing'] ?? 0)) ?></div>
         </div>
     </div>
 </div>
 
-<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+<div class="flex items-center gap-3 mb-6 animate-slide-up stagger-4">
+    <div class="h-8 w-1.5 bg-gradient-premium rounded-full"></div>
+    <h2 class="text-2xl font-bold text-gray-900 m-0">Business Metrics</h2>
+</div>
+
+<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-10 animate-slide-up stagger-4">
     <!-- Load Summary -->
-    <div class="glass-card rounded-2xl p-6 relative overflow-hidden group hover:-translate-y-1 transition-all duration-300">
-        <div class="absolute -right-6 -top-6 w-24 h-24 bg-blue-50 rounded-full group-hover:scale-150 transition-transform duration-500 ease-out z-0"></div>
+    <div class="glass-card rounded-3xl p-6 relative overflow-hidden group">
+        <div class="absolute -right-6 -top-6 w-32 h-32 bg-blue-50 rounded-full group-hover:scale-150 transition-transform duration-700 ease-out z-0 opacity-50"></div>
         <div class="relative z-10">
-            <div class="flex items-center justify-between mb-4">
-                <div class="text-sm font-semibold text-gray-500 uppercase tracking-wider">Load Summary</div>
-                <div class="p-2 bg-blue-100 text-blue-600 rounded-lg"><i data-lucide="smartphone" class="w-5 h-5"></i></div>
+            <div class="flex items-center justify-between mb-6">
+                <div class="text-xs font-bold text-gray-500 uppercase tracking-widest">Load Summary</div>
+                <div class="p-2.5 bg-blue-100 text-blue-600 rounded-xl group-hover:bg-blue-200 transition-colors"><i data-lucide="smartphone" class="w-5 h-5"></i></div>
             </div>
-            <div class="text-3xl font-bold text-gray-900 tracking-tight">Rs <?= money($loadTotalBalance) ?></div>
+            <div class="text-3xl font-extrabold text-gray-900 tracking-tight">Rs <?= money($loadTotalBalance) ?></div>
         </div>
     </div>
 
     <!-- Load Profit -->
     <?php if ($canViewProfit): ?>
-        <div class="glass-card rounded-2xl p-6 relative overflow-hidden group hover:-translate-y-1 transition-all duration-300">
-            <div class="absolute -right-6 -top-6 w-24 h-24 bg-green-50 rounded-full group-hover:scale-150 transition-transform duration-500 ease-out z-0"></div>
+        <div class="glass-card rounded-3xl p-6 relative overflow-hidden group">
+            <div class="absolute -right-6 -top-6 w-32 h-32 bg-green-50 rounded-full group-hover:scale-150 transition-transform duration-700 ease-out z-0 opacity-50"></div>
             <div class="relative z-10">
-                <div class="flex items-center justify-between mb-4">
-                    <div class="text-sm font-semibold text-gray-500 uppercase tracking-wider">Load Profit</div>
-                    <div class="p-2 bg-green-100 text-green-600 rounded-lg"><i data-lucide="trending-up" class="w-5 h-5"></i></div>
+                <div class="flex items-center justify-between mb-6">
+                    <div class="text-xs font-bold text-gray-500 uppercase tracking-widest">Load Profit</div>
+                    <div class="p-2.5 bg-green-100 text-green-600 rounded-xl group-hover:bg-green-200 transition-colors"><i data-lucide="trending-up" class="w-5 h-5"></i></div>
                 </div>
-                <div class="text-3xl font-bold text-gray-900 tracking-tight">Rs <?= money($loadTotalProfit) ?></div>
+                <div class="text-3xl font-extrabold text-gray-900 tracking-tight">Rs <?= money($loadTotalProfit) ?></div>
             </div>
         </div>
     <?php endif; ?>
 
     <!-- Jazz Balance -->
-    <div class="glass-card rounded-2xl p-6 relative overflow-hidden group hover:-translate-y-1 transition-all duration-300">
-        <div class="absolute -right-6 -top-6 w-24 h-24 bg-red-50 rounded-full group-hover:scale-150 transition-transform duration-500 ease-out z-0"></div>
+    <div class="glass-card rounded-3xl p-6 relative overflow-hidden group">
+        <div class="absolute -right-6 -top-6 w-32 h-32 bg-red-50 rounded-full group-hover:scale-150 transition-transform duration-700 ease-out z-0 opacity-50"></div>
         <div class="relative z-10">
-            <div class="flex items-center justify-between mb-4">
-                <div class="text-sm font-semibold text-gray-500 uppercase tracking-wider">Jazz Balance</div>
-                <div class="p-2 bg-red-100 text-red-600 rounded-lg"><i data-lucide="signal" class="w-5 h-5"></i></div>
+            <div class="flex items-center justify-between mb-6">
+                <div class="text-xs font-bold text-gray-500 uppercase tracking-widest">Jazz Balance</div>
+                <div class="p-2.5 bg-red-100 text-red-600 rounded-xl group-hover:bg-red-200 transition-colors"><i data-lucide="signal" class="w-5 h-5"></i></div>
             </div>
-            <div class="text-3xl font-bold text-gray-900 tracking-tight">Rs <?= money($loadBalances['Jazz'] ?? 0) ?></div>
+            <div class="text-3xl font-extrabold text-gray-900 tracking-tight">Rs <?= money($loadBalances['Jazz'] ?? 0) ?></div>
         </div>
     </div>
 
     <!-- Zong Balance -->
-    <div class="glass-card rounded-2xl p-6 relative overflow-hidden group hover:-translate-y-1 transition-all duration-300">
-        <div class="absolute -right-6 -top-6 w-24 h-24 bg-green-50 rounded-full group-hover:scale-150 transition-transform duration-500 ease-out z-0"></div>
+    <div class="glass-card rounded-3xl p-6 relative overflow-hidden group">
+        <div class="absolute -right-6 -top-6 w-32 h-32 bg-green-50 rounded-full group-hover:scale-150 transition-transform duration-700 ease-out z-0 opacity-50"></div>
         <div class="relative z-10">
-            <div class="flex items-center justify-between mb-4">
-                <div class="text-sm font-semibold text-gray-500 uppercase tracking-wider">Zong Balance</div>
-                <div class="p-2 bg-green-100 text-green-600 rounded-lg"><i data-lucide="radio-tower" class="w-5 h-5"></i></div>
+            <div class="flex items-center justify-between mb-6">
+                <div class="text-xs font-bold text-gray-500 uppercase tracking-widest">Zong Balance</div>
+                <div class="p-2.5 bg-green-100 text-green-600 rounded-xl group-hover:bg-green-200 transition-colors"><i data-lucide="radio-tower" class="w-5 h-5"></i></div>
             </div>
-            <div class="text-3xl font-bold text-gray-900 tracking-tight">Rs <?= money($loadBalances['Zong'] ?? 0) ?></div>
+            <div class="text-3xl font-extrabold text-gray-900 tracking-tight">Rs <?= money($loadBalances['Zong'] ?? 0) ?></div>
         </div>
     </div>
 
     <!-- Ufone Balance -->
-    <div class="glass-card rounded-2xl p-6 relative overflow-hidden group hover:-translate-y-1 transition-all duration-300">
-        <div class="absolute -right-6 -top-6 w-24 h-24 bg-orange-50 rounded-full group-hover:scale-150 transition-transform duration-500 ease-out z-0"></div>
+    <div class="glass-card rounded-3xl p-6 relative overflow-hidden group">
+        <div class="absolute -right-6 -top-6 w-32 h-32 bg-orange-50 rounded-full group-hover:scale-150 transition-transform duration-700 ease-out z-0 opacity-50"></div>
         <div class="relative z-10">
-            <div class="flex items-center justify-between mb-4">
-                <div class="text-sm font-semibold text-gray-500 uppercase tracking-wider">Ufone Balance</div>
-                <div class="p-2 bg-orange-100 text-orange-500 rounded-lg"><i data-lucide="wifi" class="w-5 h-5"></i></div>
+            <div class="flex items-center justify-between mb-6">
+                <div class="text-xs font-bold text-gray-500 uppercase tracking-widest">Ufone Balance</div>
+                <div class="p-2.5 bg-orange-100 text-orange-500 rounded-xl group-hover:bg-orange-200 transition-colors"><i data-lucide="wifi" class="w-5 h-5"></i></div>
             </div>
-            <div class="text-3xl font-bold text-gray-900 tracking-tight">Rs <?= money($loadBalances['Ufone'] ?? 0) ?></div>
+            <div class="text-3xl font-extrabold text-gray-900 tracking-tight">Rs <?= money($loadBalances['Ufone'] ?? 0) ?></div>
         </div>
     </div>
 
     <!-- Telenor Balance -->
-    <div class="glass-card rounded-2xl p-6 relative overflow-hidden group hover:-translate-y-1 transition-all duration-300">
-        <div class="absolute -right-6 -top-6 w-24 h-24 bg-cyan-50 rounded-full group-hover:scale-150 transition-transform duration-500 ease-out z-0"></div>
+    <div class="glass-card rounded-3xl p-6 relative overflow-hidden group">
+        <div class="absolute -right-6 -top-6 w-32 h-32 bg-cyan-50 rounded-full group-hover:scale-150 transition-transform duration-700 ease-out z-0 opacity-50"></div>
         <div class="relative z-10">
-            <div class="flex items-center justify-between mb-4">
-                <div class="text-sm font-semibold text-gray-500 uppercase tracking-wider">Telenor Balance</div>
-                <div class="p-2 bg-cyan-100 text-cyan-600 rounded-lg"><i data-lucide="rss" class="w-5 h-5"></i></div>
+            <div class="flex items-center justify-between mb-6">
+                <div class="text-xs font-bold text-gray-500 uppercase tracking-widest">Telenor Balance</div>
+                <div class="p-2.5 bg-cyan-100 text-cyan-600 rounded-xl group-hover:bg-cyan-200 transition-colors"><i data-lucide="rss" class="w-5 h-5"></i></div>
             </div>
-            <div class="text-3xl font-bold text-gray-900 tracking-tight">Rs <?= money($loadBalances['Telenor'] ?? 0) ?></div>
+            <div class="text-3xl font-extrabold text-gray-900 tracking-tight">Rs <?= money($loadBalances['Telenor'] ?? 0) ?></div>
         </div>
     </div>
 
     <!-- EasyPaisa Total -->
-    <div class="glass-card rounded-2xl p-6 relative overflow-hidden group hover:-translate-y-1 transition-all duration-300">
-        <div class="absolute -right-6 -top-6 w-24 h-24 bg-emerald-50 rounded-full group-hover:scale-150 transition-transform duration-500 ease-out z-0"></div>
+    <div class="glass-card rounded-3xl p-6 relative overflow-hidden group">
+        <div class="absolute -right-6 -top-6 w-32 h-32 bg-emerald-50 rounded-full group-hover:scale-150 transition-transform duration-700 ease-out z-0 opacity-50"></div>
         <div class="relative z-10">
-            <div class="flex items-center justify-between mb-4">
-                <div class="text-sm font-semibold text-gray-500 uppercase tracking-wider">EasyPaisa</div>
-                <div class="p-2 bg-emerald-100 text-emerald-600 rounded-lg"><i data-lucide="wallet" class="w-5 h-5"></i></div>
+            <div class="flex items-center justify-between mb-6">
+                <div class="text-xs font-bold text-gray-500 uppercase tracking-widest">EasyPaisa</div>
+                <div class="p-2.5 bg-emerald-100 text-emerald-600 rounded-xl group-hover:bg-emerald-200 transition-colors"><i data-lucide="wallet" class="w-5 h-5"></i></div>
             </div>
-            <div class="text-3xl font-bold text-gray-900 tracking-tight">Rs <?= money($easypaisaNet) ?></div>
+            <div class="text-3xl font-extrabold text-gray-900 tracking-tight">Rs <?= money($easypaisaNet) ?></div>
         </div>
     </div>
 
     <!-- JazzCash Total -->
-    <div class="glass-card rounded-2xl p-6 relative overflow-hidden group hover:-translate-y-1 transition-all duration-300">
-        <div class="absolute -right-6 -top-6 w-24 h-24 bg-rose-50 rounded-full group-hover:scale-150 transition-transform duration-500 ease-out z-0"></div>
+    <div class="glass-card rounded-3xl p-6 relative overflow-hidden group">
+        <div class="absolute -right-6 -top-6 w-32 h-32 bg-rose-50 rounded-full group-hover:scale-150 transition-transform duration-700 ease-out z-0 opacity-50"></div>
         <div class="relative z-10">
-            <div class="flex items-center justify-between mb-4">
-                <div class="text-sm font-semibold text-gray-500 uppercase tracking-wider">JazzCash</div>
-                <div class="p-2 bg-rose-100 text-rose-600 rounded-lg"><i data-lucide="circle-dollar-sign" class="w-5 h-5"></i></div>
+            <div class="flex items-center justify-between mb-6">
+                <div class="text-xs font-bold text-gray-500 uppercase tracking-widest">JazzCash</div>
+                <div class="p-2.5 bg-rose-100 text-rose-600 rounded-xl group-hover:bg-rose-200 transition-colors"><i data-lucide="circle-dollar-sign" class="w-5 h-5"></i></div>
             </div>
-            <div class="text-3xl font-bold text-gray-900 tracking-tight">Rs <?= money($jazzcashNet) ?></div>
+            <div class="text-3xl font-extrabold text-gray-900 tracking-tight">Rs <?= money($jazzcashNet) ?></div>
         </div>
     </div>
 
     <!-- Bank Transfer Total -->
-    <div class="glass-card rounded-2xl p-6 relative overflow-hidden group hover:-translate-y-1 transition-all duration-300">
-        <div class="absolute -right-6 -top-6 w-24 h-24 bg-indigo-50 rounded-full group-hover:scale-150 transition-transform duration-500 ease-out z-0"></div>
+    <div class="glass-card rounded-3xl p-6 relative overflow-hidden group">
+        <div class="absolute -right-6 -top-6 w-32 h-32 bg-indigo-50 rounded-full group-hover:scale-150 transition-transform duration-700 ease-out z-0 opacity-50"></div>
         <div class="relative z-10">
-            <div class="flex items-center justify-between mb-4">
-                <div class="text-sm font-semibold text-gray-500 uppercase tracking-wider">Bank Transfer</div>
-                <div class="p-2 bg-indigo-100 text-indigo-600 rounded-lg"><i data-lucide="building-2" class="w-5 h-5"></i></div>
+            <div class="flex items-center justify-between mb-6">
+                <div class="text-xs font-bold text-gray-500 uppercase tracking-widest">Bank Transfer</div>
+                <div class="p-2.5 bg-indigo-100 text-indigo-600 rounded-xl group-hover:bg-indigo-200 transition-colors"><i data-lucide="building-2" class="w-5 h-5"></i></div>
             </div>
-            <div class="text-3xl font-bold text-gray-900 tracking-tight">Rs <?= money($bankNet) ?></div>
+            <div class="text-3xl font-extrabold text-gray-900 tracking-tight">Rs <?= money($bankNet) ?></div>
         </div>
     </div>
 
     <!-- Today Expense -->
-    <div class="glass-card rounded-2xl p-6 relative overflow-hidden group hover:-translate-y-1 transition-all duration-300">
-        <div class="absolute -right-6 -top-6 w-24 h-24 bg-red-50 rounded-full group-hover:scale-150 transition-transform duration-500 ease-out z-0"></div>
+    <div class="glass-card rounded-3xl p-6 relative overflow-hidden group">
+        <div class="absolute -right-6 -top-6 w-32 h-32 bg-red-50 rounded-full group-hover:scale-150 transition-transform duration-700 ease-out z-0 opacity-50"></div>
         <div class="relative z-10">
-            <div class="flex items-center justify-between mb-4">
-                <div class="text-sm font-semibold text-gray-500 uppercase tracking-wider">Today's Expense</div>
-                <div class="p-2 bg-red-100 text-red-600 rounded-lg"><i data-lucide="trending-down" class="w-5 h-5"></i></div>
+            <div class="flex items-center justify-between mb-6">
+                <div class="text-xs font-bold text-gray-500 uppercase tracking-widest">Today's Expense</div>
+                <div class="p-2.5 bg-red-100 text-red-600 rounded-xl group-hover:bg-red-200 transition-colors"><i data-lucide="trending-down" class="w-5 h-5"></i></div>
             </div>
-            <div class="text-3xl font-bold text-danger tracking-tight">Rs <?= money($todayExpense) ?></div>
+            <div class="text-3xl font-extrabold text-danger tracking-tight">Rs <?= money($todayExpense) ?></div>
         </div>
     </div>
 
     <!-- Monthly Expense -->
-    <div class="glass-card rounded-2xl p-6 relative overflow-hidden group hover:-translate-y-1 transition-all duration-300">
-        <div class="absolute -right-6 -top-6 w-24 h-24 bg-red-50 rounded-full group-hover:scale-150 transition-transform duration-500 ease-out z-0"></div>
+    <div class="glass-card rounded-3xl p-6 relative overflow-hidden group">
+        <div class="absolute -right-6 -top-6 w-32 h-32 bg-red-50 rounded-full group-hover:scale-150 transition-transform duration-700 ease-out z-0 opacity-50"></div>
         <div class="relative z-10">
-            <div class="flex items-center justify-between mb-4">
-                <div class="text-sm font-semibold text-gray-500 uppercase tracking-wider">Monthly Expense</div>
-                <div class="p-2 bg-red-100 text-red-600 rounded-lg"><i data-lucide="calendar-x" class="w-5 h-5"></i></div>
+            <div class="flex items-center justify-between mb-6">
+                <div class="text-xs font-bold text-gray-500 uppercase tracking-widest">Monthly Expense</div>
+                <div class="p-2.5 bg-red-100 text-red-600 rounded-xl group-hover:bg-red-200 transition-colors"><i data-lucide="calendar-x" class="w-5 h-5"></i></div>
             </div>
-            <div class="text-3xl font-bold text-danger tracking-tight">Rs <?= money($monthlyExpense) ?></div>
+            <div class="text-3xl font-extrabold text-danger tracking-tight">Rs <?= money($monthlyExpense) ?></div>
         </div>
     </div>
 
     <!-- Today Profit -->
     <?php if ($canViewProfit): ?>
-        <div class="glass-card rounded-2xl p-6 relative overflow-hidden group hover:-translate-y-1 transition-all duration-300">
-            <div class="absolute -right-6 -top-6 w-24 h-24 bg-green-50 rounded-full group-hover:scale-150 transition-transform duration-500 ease-out z-0"></div>
+        <div class="glass-card rounded-3xl p-6 relative overflow-hidden group">
+            <div class="absolute -right-6 -top-6 w-32 h-32 bg-green-50 rounded-full group-hover:scale-150 transition-transform duration-700 ease-out z-0 opacity-50"></div>
             <div class="relative z-10">
-                <div class="flex items-center justify-between mb-4">
-                    <div class="text-sm font-semibold text-gray-500 uppercase tracking-wider">Today's Profit</div>
-                    <div class="p-2 bg-green-100 text-green-600 rounded-lg"><i data-lucide="trending-up" class="w-5 h-5"></i></div>
+                <div class="flex items-center justify-between mb-6">
+                    <div class="text-xs font-bold text-gray-500 uppercase tracking-widest">Today's Profit</div>
+                    <div class="p-2.5 bg-green-100 text-green-600 rounded-xl group-hover:bg-green-200 transition-colors"><i data-lucide="trending-up" class="w-5 h-5"></i></div>
                 </div>
-                <div class="text-3xl font-bold text-success tracking-tight">Rs <?= money($todayProfit) ?></div>
+                <div class="text-3xl font-extrabold text-success tracking-tight">Rs <?= money($todayProfit) ?></div>
             </div>
         </div>
 
-        <div class="glass-card rounded-2xl p-6 relative overflow-hidden group hover:-translate-y-1 transition-all duration-300">
-            <div class="absolute -right-6 -top-6 w-24 h-24 bg-green-50 rounded-full group-hover:scale-150 transition-transform duration-500 ease-out z-0"></div>
+        <div class="glass-card rounded-3xl p-6 relative overflow-hidden group">
+            <div class="absolute -right-6 -top-6 w-32 h-32 bg-green-50 rounded-full group-hover:scale-150 transition-transform duration-700 ease-out z-0 opacity-50"></div>
             <div class="relative z-10">
-                <div class="flex items-center justify-between mb-4">
-                    <div class="text-sm font-semibold text-gray-500 uppercase tracking-wider">Monthly Profit</div>
-                    <div class="p-2 bg-green-100 text-green-600 rounded-lg"><i data-lucide="calendar-check" class="w-5 h-5"></i></div>
+                <div class="flex items-center justify-between mb-6">
+                    <div class="text-xs font-bold text-gray-500 uppercase tracking-widest">Monthly Profit</div>
+                    <div class="p-2.5 bg-green-100 text-green-600 rounded-xl group-hover:bg-green-200 transition-colors"><i data-lucide="calendar-check" class="w-5 h-5"></i></div>
                 </div>
-                <div class="text-3xl font-bold text-success tracking-tight">Rs <?= money($monthlyProfit) ?></div>
+                <div class="text-3xl font-extrabold text-success tracking-tight">Rs <?= money($monthlyProfit) ?></div>
             </div>
         </div>
     <?php endif; ?>
 </div>
 
 <?php if (app_is_owner()): ?>
-    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-        <div class="glass-card rounded-2xl p-6 relative overflow-hidden group hover:-translate-y-1 transition-all duration-300">
-            <div class="absolute -right-6 -top-6 w-24 h-24 bg-brand-50 rounded-full group-hover:scale-150 transition-transform duration-500 ease-out z-0"></div>
+    <div class="flex items-center gap-3 mb-6 animate-slide-up stagger-5">
+        <div class="h-8 w-1.5 bg-gradient-premium rounded-full"></div>
+        <h2 class="text-2xl font-bold text-gray-900 m-0">Owner Dashboard</h2>
+    </div>
+
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-10 animate-slide-up stagger-5">
+        <div class="glass-card rounded-3xl p-6 relative overflow-hidden group">
+            <div class="absolute -right-6 -top-6 w-32 h-32 bg-brand-50 rounded-full group-hover:scale-150 transition-transform duration-700 ease-out z-0 opacity-50"></div>
             <div class="relative z-10">
-                <div class="flex items-center justify-between mb-4">
-                    <div class="text-sm font-semibold text-gray-500 uppercase tracking-wider">Total Credit</div>
-                    <div class="p-2 bg-brand-100 text-brand-600 rounded-lg"><i data-lucide="circle-dollar-sign" class="w-5 h-5"></i></div>
+                <div class="flex items-center justify-between mb-6">
+                    <div class="text-xs font-bold text-gray-500 uppercase tracking-widest">Total Credit</div>
+                    <div class="p-2.5 bg-brand-100 text-brand-600 rounded-xl group-hover:bg-brand-200 transition-colors"><i data-lucide="circle-dollar-sign" class="w-5 h-5"></i></div>
                 </div>
-                <div class="text-3xl font-bold text-gray-900 tracking-tight">Rs <?= money($creditAdvanceTotal) ?></div>
-                <div class="text-xs text-gray-500 mt-1">Advance received</div>
+                <div class="text-3xl font-extrabold text-gray-900 tracking-tight">Rs <?= money($creditAdvanceTotal) ?></div>
+                <div class="text-sm font-medium text-gray-500 mt-2 bg-gray-50 px-3 py-1.5 rounded-lg inline-block border border-gray-100">Advance received</div>
             </div>
         </div>
 
-        <div class="glass-card rounded-2xl p-6 relative overflow-hidden group hover:-translate-y-1 transition-all duration-300">
-            <div class="absolute -right-6 -top-6 w-24 h-24 bg-gray-50 rounded-full group-hover:scale-150 transition-transform duration-500 ease-out z-0"></div>
+        <div class="glass-card rounded-3xl p-6 relative overflow-hidden group">
+            <div class="absolute -right-6 -top-6 w-32 h-32 bg-gray-50 rounded-full group-hover:scale-150 transition-transform duration-700 ease-out z-0 opacity-50"></div>
             <div class="relative z-10">
-                <div class="flex items-center justify-between mb-4">
-                    <div class="text-sm font-semibold text-gray-500 uppercase tracking-wider">Used Credit</div>
-                    <div class="p-2 bg-gray-100 text-gray-700 rounded-lg"><i data-lucide="minus-circle" class="w-5 h-5"></i></div>
+                <div class="flex items-center justify-between mb-6">
+                    <div class="text-xs font-bold text-gray-500 uppercase tracking-widest">Used Credit</div>
+                    <div class="p-2.5 bg-gray-100 text-gray-700 rounded-xl group-hover:bg-gray-200 transition-colors"><i data-lucide="minus-circle" class="w-5 h-5"></i></div>
                 </div>
-                <div class="text-3xl font-bold text-gray-900 tracking-tight">Rs <?= money($creditUsedTotal) ?></div>
-                <div class="text-xs text-gray-500 mt-1">Credit used</div>
+                <div class="text-3xl font-extrabold text-gray-900 tracking-tight">Rs <?= money($creditUsedTotal) ?></div>
+                <div class="text-sm font-medium text-gray-500 mt-2 bg-gray-50 px-3 py-1.5 rounded-lg inline-block border border-gray-100">Credit used</div>
             </div>
         </div>
 
-        <div class="glass-card rounded-2xl p-6 relative overflow-hidden group hover:-translate-y-1 transition-all duration-300">
-            <div class="absolute -right-6 -top-6 w-24 h-24 bg-emerald-50 rounded-full group-hover:scale-150 transition-transform duration-500 ease-out z-0"></div>
+        <div class="glass-card rounded-3xl p-6 relative overflow-hidden group">
+            <div class="absolute -right-6 -top-6 w-32 h-32 bg-emerald-50 rounded-full group-hover:scale-150 transition-transform duration-700 ease-out z-0 opacity-50"></div>
             <div class="relative z-10">
-                <div class="flex items-center justify-between mb-4">
-                    <div class="text-sm font-semibold text-gray-500 uppercase tracking-wider">Remaining Credit</div>
-                    <div class="p-2 bg-emerald-100 text-emerald-600 rounded-lg"><i data-lucide="badge-check" class="w-5 h-5"></i></div>
+                <div class="flex items-center justify-between mb-6">
+                    <div class="text-xs font-bold text-gray-500 uppercase tracking-widest">Remaining Credit</div>
+                    <div class="p-2.5 bg-emerald-100 text-emerald-600 rounded-xl group-hover:bg-emerald-200 transition-colors"><i data-lucide="badge-check" class="w-5 h-5"></i></div>
                 </div>
-                <div class="text-3xl font-bold text-gray-900 tracking-tight">Rs <?= money($creditRemainingTotal) ?></div>
-                <div class="text-xs text-gray-500 mt-1">Advance - used</div>
+                <div class="text-3xl font-extrabold text-gray-900 tracking-tight">Rs <?= money($creditRemainingTotal) ?></div>
+                <div class="text-sm font-medium text-gray-500 mt-2 bg-gray-50 px-3 py-1.5 rounded-lg inline-block border border-gray-100">Advance - used</div>
             </div>
         </div>
 
-        <div class="glass-card rounded-2xl p-6 relative overflow-hidden group hover:-translate-y-1 transition-all duration-300">
-            <div class="absolute -right-6 -top-6 w-24 h-24 bg-blue-50 rounded-full group-hover:scale-150 transition-transform duration-500 ease-out z-0"></div>
+        <div class="glass-card rounded-3xl p-6 relative overflow-hidden group">
+            <div class="absolute -right-6 -top-6 w-32 h-32 bg-blue-50 rounded-full group-hover:scale-150 transition-transform duration-700 ease-out z-0 opacity-50"></div>
             <div class="relative z-10">
-                <div class="flex items-center justify-between mb-4">
-                    <div class="text-sm font-semibold text-gray-500 uppercase tracking-wider">Dealer Payments</div>
-                    <div class="p-2 bg-blue-100 text-blue-600 rounded-lg"><i data-lucide="users" class="w-5 h-5"></i></div>
+                <div class="flex items-center justify-between mb-6">
+                    <div class="text-xs font-bold text-gray-500 uppercase tracking-widest">Dealer Payments</div>
+                    <div class="p-2.5 bg-blue-100 text-blue-600 rounded-xl group-hover:bg-blue-200 transition-colors"><i data-lucide="users" class="w-5 h-5"></i></div>
                 </div>
-                <div class="text-3xl font-bold text-gray-900 tracking-tight">Rs <?= money($dealerPaymentsMonthTotal) ?></div>
-                <div class="text-xs text-gray-500 mt-1">This month • Payable: Rs <?= money($dealerRemainingPayableMonth) ?></div>
-                <div class="text-xs text-gray-500 mt-1">
-                    Jazz: <?= money($dealerPaymentsByNetwork['Jazz'] ?? 0) ?> • Zong: <?= money($dealerPaymentsByNetwork['Zong'] ?? 0) ?>
-                    • Telenor: <?= money($dealerPaymentsByNetwork['Telenor'] ?? 0) ?> • Ufone: <?= money($dealerPaymentsByNetwork['Ufone'] ?? 0) ?>
+                <div class="text-3xl font-extrabold text-gray-900 tracking-tight">Rs <?= money($dealerPaymentsMonthTotal) ?></div>
+                <div class="text-sm font-medium text-gray-500 mt-2 bg-gray-50 px-3 py-1.5 rounded-lg inline-block border border-gray-100 mb-2">This month • Payable: Rs <?= money($dealerRemainingPayableMonth) ?></div>
+                <div class="text-xs font-medium text-gray-500 flex flex-wrap gap-2">
+                    <span class="bg-red-50 text-red-600 px-2.5 py-1 rounded-lg border border-red-100">Jazz: <?= money($dealerPaymentsByNetwork['Jazz'] ?? 0) ?></span>
+                    <span class="bg-green-50 text-green-600 px-2.5 py-1 rounded-lg border border-green-100">Zong: <?= money($dealerPaymentsByNetwork['Zong'] ?? 0) ?></span>
+                    <span class="bg-cyan-50 text-cyan-600 px-2.5 py-1 rounded-lg border border-cyan-100">Telenor: <?= money($dealerPaymentsByNetwork['Telenor'] ?? 0) ?></span>
+                    <span class="bg-orange-50 text-orange-600 px-2.5 py-1 rounded-lg border border-orange-100">Ufone: <?= money($dealerPaymentsByNetwork['Ufone'] ?? 0) ?></span>
                 </div>
             </div>
         </div>
     </div>
 
-    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-        <div class="glass-card rounded-2xl p-6 relative overflow-hidden group hover:-translate-y-1 transition-all duration-300">
-            <div class="absolute -right-6 -top-6 w-24 h-24 bg-amber-50 rounded-full group-hover:scale-150 transition-transform duration-500 ease-out z-0"></div>
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-10 animate-slide-up stagger-5">
+        <div class="glass-card rounded-3xl p-6 relative overflow-hidden group">
+            <div class="absolute -right-6 -top-6 w-32 h-32 bg-amber-50 rounded-full group-hover:scale-150 transition-transform duration-700 ease-out z-0 opacity-50"></div>
             <div class="relative z-10">
-                <div class="flex items-center justify-between mb-4">
-                    <div class="text-sm font-semibold text-gray-500 uppercase tracking-wider">Expected Cash</div>
-                    <div class="p-2 bg-amber-100 text-amber-600 rounded-lg"><i data-lucide="banknote" class="w-5 h-5"></i></div>
+                <div class="flex items-center justify-between mb-6">
+                    <div class="text-xs font-bold text-gray-500 uppercase tracking-widest">Expected Cash</div>
+                    <div class="p-2.5 bg-amber-100 text-amber-600 rounded-xl group-hover:bg-amber-200 transition-colors"><i data-lucide="banknote" class="w-5 h-5"></i></div>
                 </div>
-                <div class="text-3xl font-bold text-gray-900 tracking-tight">Rs <?= money($cashExpectedToday) ?></div>
-                <div class="text-xs text-gray-500 mt-1">Today (drawer)</div>
+                <div class="text-3xl font-extrabold text-gray-900 tracking-tight">Rs <?= money($cashExpectedToday) ?></div>
+                <div class="text-sm font-medium text-gray-500 mt-2 bg-gray-50 px-3 py-1.5 rounded-lg inline-block border border-gray-100">Today (drawer)</div>
             </div>
         </div>
 
-        <div class="glass-card rounded-2xl p-6 relative overflow-hidden group hover:-translate-y-1 transition-all duration-300">
-            <div class="absolute -right-6 -top-6 w-24 h-24 bg-gray-50 rounded-full group-hover:scale-150 transition-transform duration-500 ease-out z-0"></div>
+        <div class="glass-card rounded-3xl p-6 relative overflow-hidden group">
+            <div class="absolute -right-6 -top-6 w-32 h-32 bg-gray-50 rounded-full group-hover:scale-150 transition-transform duration-700 ease-out z-0 opacity-50"></div>
             <div class="relative z-10">
-                <div class="flex items-center justify-between mb-4">
-                    <div class="text-sm font-semibold text-gray-500 uppercase tracking-wider">Cash Count</div>
-                    <div class="p-2 bg-gray-100 text-gray-700 rounded-lg"><i data-lucide="clipboard-check" class="w-5 h-5"></i></div>
+                <div class="flex items-center justify-between mb-6">
+                    <div class="text-xs font-bold text-gray-500 uppercase tracking-widest">Cash Count</div>
+                    <div class="p-2.5 bg-gray-100 text-gray-700 rounded-xl group-hover:bg-gray-200 transition-colors"><i data-lucide="clipboard-check" class="w-5 h-5"></i></div>
                 </div>
                 <?php if (is_array($cashCountToday)): ?>
-                    <div class="text-3xl font-bold text-gray-900 tracking-tight">Rs <?= money((float) ($cashCountToday['actual_cash'] ?? 0)) ?></div>
-                    <div class="text-xs text-gray-500 mt-1">Actual • Diff: Rs <?= money((float) ($cashCountToday['difference'] ?? 0)) ?></div>
+                    <div class="text-3xl font-extrabold text-gray-900 tracking-tight">Rs <?= money((float) ($cashCountToday['actual_cash'] ?? 0)) ?></div>
+                    <div class="text-sm font-medium text-gray-500 mt-2 bg-gray-50 px-3 py-1.5 rounded-lg inline-block border border-gray-100">Actual • Diff: Rs <?= money((float) ($cashCountToday['difference'] ?? 0)) ?></div>
                 <?php else: ?>
-                    <div class="text-3xl font-bold text-gray-900 tracking-tight">Not Counted</div>
-                    <div class="text-xs text-gray-500 mt-1">Count cash from Cash Management</div>
+                    <div class="text-3xl font-extrabold text-gray-900 tracking-tight">Not Counted</div>
+                    <div class="text-sm font-medium text-gray-500 mt-2 bg-gray-50 px-3 py-1.5 rounded-lg inline-block border border-gray-100">Count cash from Cash Management</div>
                 <?php endif; ?>
             </div>
         </div>
 
-        <div class="glass-card rounded-2xl p-6 relative overflow-hidden group hover:-translate-y-1 transition-all duration-300">
-            <div class="absolute -right-6 -top-6 w-24 h-24 bg-emerald-50 rounded-full group-hover:scale-150 transition-transform duration-500 ease-out z-0"></div>
+        <div class="glass-card rounded-3xl p-6 relative overflow-hidden group">
+            <div class="absolute -right-6 -top-6 w-32 h-32 bg-emerald-50 rounded-full group-hover:scale-150 transition-transform duration-700 ease-out z-0 opacity-50"></div>
             <div class="relative z-10">
-                <div class="flex items-center justify-between mb-4">
-                    <div class="text-sm font-semibold text-gray-500 uppercase tracking-wider">Cash Received</div>
-                    <div class="p-2 bg-emerald-100 text-emerald-600 rounded-lg"><i data-lucide="arrow-down-left" class="w-5 h-5"></i></div>
+                <div class="flex items-center justify-between mb-6">
+                    <div class="text-xs font-bold text-gray-500 uppercase tracking-widest">Cash Received</div>
+                    <div class="p-2.5 bg-emerald-100 text-emerald-600 rounded-xl group-hover:bg-emerald-200 transition-colors"><i data-lucide="arrow-down-left" class="w-5 h-5"></i></div>
                 </div>
-                <div class="text-3xl font-bold text-gray-900 tracking-tight">Rs <?= money($cashReceivedToday) ?></div>
-                <div class="text-xs text-gray-500 mt-1">Today</div>
+                <div class="text-3xl font-extrabold text-gray-900 tracking-tight">Rs <?= money($cashReceivedToday) ?></div>
+                <div class="text-sm font-medium text-gray-500 mt-2 bg-gray-50 px-3 py-1.5 rounded-lg inline-block border border-gray-100">Today</div>
             </div>
         </div>
 
-        <div class="glass-card rounded-2xl p-6 relative overflow-hidden group hover:-translate-y-1 transition-all duration-300">
-            <div class="absolute -right-6 -top-6 w-24 h-24 bg-red-50 rounded-full group-hover:scale-150 transition-transform duration-500 ease-out z-0"></div>
+        <div class="glass-card rounded-3xl p-6 relative overflow-hidden group">
+            <div class="absolute -right-6 -top-6 w-32 h-32 bg-red-50 rounded-full group-hover:scale-150 transition-transform duration-700 ease-out z-0 opacity-50"></div>
             <div class="relative z-10">
-                <div class="flex items-center justify-between mb-4">
-                    <div class="text-sm font-semibold text-gray-500 uppercase tracking-wider">Cash Sent</div>
-                    <div class="p-2 bg-red-100 text-red-600 rounded-lg"><i data-lucide="arrow-up-right" class="w-5 h-5"></i></div>
+                <div class="flex items-center justify-between mb-6">
+                    <div class="text-xs font-bold text-gray-500 uppercase tracking-widest">Cash Sent</div>
+                    <div class="p-2.5 bg-red-100 text-red-600 rounded-xl group-hover:bg-red-200 transition-colors"><i data-lucide="arrow-up-right" class="w-5 h-5"></i></div>
                 </div>
-                <div class="text-3xl font-bold text-gray-900 tracking-tight">Rs <?= money($cashSentToday) ?></div>
-                <div class="text-xs text-gray-500 mt-1">Today</div>
+                <div class="text-3xl font-extrabold text-gray-900 tracking-tight">Rs <?= money($cashSentToday) ?></div>
+                <div class="text-sm font-medium text-gray-500 mt-2 bg-gray-50 px-3 py-1.5 rounded-lg inline-block border border-gray-100">Today</div>
             </div>
         </div>
     </div>
 <?php endif; ?>
 
-<div class="row g-4 mb-8">
+<div class="row g-6 mb-10 animate-slide-up stagger-5">
     <div class="col-12 col-lg-6">
-        <div class="glass-card rounded-2xl p-6 h-100 relative overflow-hidden">
-            <div class="d-flex justify-content-between align-items-center mb-6">
-                <div>
-                    <h3 class="h5 fw-bold text-gray-900 mb-1">Daily Sales</h3>
-                    <div class="text-muted small">Revenue over last 7 days</div>
+        <div class="glass-card rounded-3xl p-8 h-100 relative overflow-hidden group">
+            <div class="absolute -right-12 -top-12 w-48 h-48 bg-brand-50 rounded-full group-hover:scale-150 transition-transform duration-700 ease-out z-0 opacity-50"></div>
+            <div class="relative z-10">
+                <div class="d-flex justify-content-between align-items-center mb-6">
+                    <div>
+                        <h3 class="text-xl font-bold text-gray-900 mb-1">Daily Sales</h3>
+                        <div class="text-sm font-medium text-gray-500">Revenue over last 7 days</div>
+                    </div>
+                    <div class="p-3 bg-brand-50 text-brand-600 rounded-2xl group-hover:bg-brand-100 transition-colors"><i data-lucide="activity" class="w-6 h-6"></i></div>
                 </div>
-                <div class="p-2 bg-blue-50 text-brand-600 rounded-lg"><i data-lucide="activity" class="w-5 h-5"></i></div>
-            </div>
-            <div class="relative h-64 w-full">
-                <canvas id="dailySalesChart"></canvas>
+                <div class="relative h-72 w-full mt-4">
+                    <canvas id="dailySalesChart"></canvas>
+                </div>
             </div>
         </div>
     </div>
 
     <?php if ($canViewProfit): ?>
         <div class="col-12 col-lg-6">
-            <div class="glass-card rounded-2xl p-6 h-100 relative overflow-hidden">
-                <div class="d-flex justify-content-between align-items-center mb-6">
-                    <div>
-                        <h3 class="h5 fw-bold text-gray-900 mb-1">Monthly Profit</h3>
-                        <div class="text-muted small">Earnings over last 12 months</div>
+            <div class="glass-card rounded-3xl p-8 h-100 relative overflow-hidden group">
+                <div class="absolute -right-12 -top-12 w-48 h-48 bg-emerald-50 rounded-full group-hover:scale-150 transition-transform duration-700 ease-out z-0 opacity-50"></div>
+                <div class="relative z-10">
+                    <div class="d-flex justify-content-between align-items-center mb-6">
+                        <div>
+                            <h3 class="text-xl font-bold text-gray-900 mb-1">Monthly Profit</h3>
+                            <div class="text-sm font-medium text-gray-500">Earnings over last 12 months</div>
+                        </div>
+                        <div class="p-3 bg-emerald-50 text-emerald-600 rounded-2xl group-hover:bg-emerald-100 transition-colors"><i data-lucide="bar-chart-2" class="w-6 h-6"></i></div>
                     </div>
-                    <div class="p-2 bg-green-50 text-success rounded-lg"><i data-lucide="bar-chart-2" class="w-5 h-5"></i></div>
-                </div>
-                <div class="relative h-64 w-full">
-                    <canvas id="monthlyProfitChart"></canvas>
+                    <div class="relative h-72 w-full mt-4">
+                        <canvas id="monthlyProfitChart"></canvas>
+                    </div>
                 </div>
             </div>
         </div>
@@ -990,48 +1061,52 @@ $extraHead = '<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/char
 </div>
 
 <!-- Quick Navigation Grid -->
-<div class="mb-4">
-    <h3 class="text-xl font-bold text-gray-900 mb-4">Quick Navigation</h3>
-    <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
+<div class="mb-10 animate-slide-up stagger-5">
+    <div class="flex items-center gap-3 mb-6">
+        <div class="h-8 w-1.5 bg-gradient-premium rounded-full"></div>
+        <h2 class="text-2xl font-bold text-gray-900 m-0">Quick Navigation</h2>
+    </div>
+    
+    <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-5">
         <?php if ($canViewProfit): ?>
-            <a href="<?= h(app_url('load-management/index.php')) ?>" class="glass-card rounded-xl p-4 text-center hover:-translate-y-1 transition-all group flex flex-col items-center justify-center gap-2 text-gray-600 hover:text-brand-600">
-                <div class="w-12 h-12 rounded-full bg-gray-50 flex items-center justify-center group-hover:bg-brand-50 transition-colors">
-                    <i data-lucide="smartphone" class="w-6 h-6"></i>
+            <a href="<?= h(app_url('load-management/index.php')) ?>" class="glass-card rounded-3xl p-6 text-center hover:-translate-y-2 transition-all duration-300 group flex flex-col items-center justify-center gap-3 text-gray-600 hover:text-brand-600 shadow-sm hover:shadow-xl hover:shadow-brand-500/10">
+                <div class="w-14 h-14 rounded-2xl bg-gradient-to-br from-brand-50 to-blue-100 flex items-center justify-center group-hover:scale-110 transition-transform duration-300 shadow-sm text-brand-600">
+                    <i data-lucide="smartphone" class="w-7 h-7"></i>
                 </div>
-                <span class="text-sm font-medium">Load</span>
+                <span class="text-sm font-bold tracking-wide">Load</span>
             </a>
         <?php endif; ?>
-        <a href="<?= h(app_url('easypaisa/index.php')) ?>" class="glass-card rounded-xl p-4 text-center hover:-translate-y-1 transition-all group flex flex-col items-center justify-center gap-2 text-gray-600 hover:text-emerald-600">
-            <div class="w-12 h-12 rounded-full bg-gray-50 flex items-center justify-center group-hover:bg-emerald-50 transition-colors">
-                <i data-lucide="wallet" class="w-6 h-6"></i>
+        <a href="<?= h(app_url('easypaisa/index.php')) ?>" class="glass-card rounded-3xl p-6 text-center hover:-translate-y-2 transition-all duration-300 group flex flex-col items-center justify-center gap-3 text-gray-600 hover:text-emerald-600 shadow-sm hover:shadow-xl hover:shadow-emerald-500/10">
+            <div class="w-14 h-14 rounded-2xl bg-gradient-to-br from-emerald-50 to-teal-100 flex items-center justify-center group-hover:scale-110 transition-transform duration-300 shadow-sm text-emerald-600">
+                <i data-lucide="wallet" class="w-7 h-7"></i>
             </div>
-            <span class="text-sm font-medium">EasyPaisa</span>
+            <span class="text-sm font-bold tracking-wide">EasyPaisa</span>
         </a>
-        <a href="<?= h(app_url('jazzcash/index.php')) ?>" class="glass-card rounded-xl p-4 text-center hover:-translate-y-1 transition-all group flex flex-col items-center justify-center gap-2 text-gray-600 hover:text-rose-600">
-            <div class="w-12 h-12 rounded-full bg-gray-50 flex items-center justify-center group-hover:bg-rose-50 transition-colors">
-                <i data-lucide="circle-dollar-sign" class="w-6 h-6"></i>
+        <a href="<?= h(app_url('jazzcash/index.php')) ?>" class="glass-card rounded-3xl p-6 text-center hover:-translate-y-2 transition-all duration-300 group flex flex-col items-center justify-center gap-3 text-gray-600 hover:text-rose-600 shadow-sm hover:shadow-xl hover:shadow-rose-500/10">
+            <div class="w-14 h-14 rounded-2xl bg-gradient-to-br from-rose-50 to-pink-100 flex items-center justify-center group-hover:scale-110 transition-transform duration-300 shadow-sm text-rose-600">
+                <i data-lucide="circle-dollar-sign" class="w-7 h-7"></i>
             </div>
-            <span class="text-sm font-medium">JazzCash</span>
+            <span class="text-sm font-bold tracking-wide">JazzCash</span>
         </a>
-        <a href="<?= h(app_url('bank-transfer/index.php')) ?>" class="glass-card rounded-xl p-4 text-center hover:-translate-y-1 transition-all group flex flex-col items-center justify-center gap-2 text-gray-600 hover:text-indigo-600">
-            <div class="w-12 h-12 rounded-full bg-gray-50 flex items-center justify-center group-hover:bg-indigo-50 transition-colors">
-                <i data-lucide="building-2" class="w-6 h-6"></i>
+        <a href="<?= h(app_url('bank-transfer/index.php')) ?>" class="glass-card rounded-3xl p-6 text-center hover:-translate-y-2 transition-all duration-300 group flex flex-col items-center justify-center gap-3 text-gray-600 hover:text-indigo-600 shadow-sm hover:shadow-xl hover:shadow-indigo-500/10">
+            <div class="w-14 h-14 rounded-2xl bg-gradient-to-br from-indigo-50 to-blue-100 flex items-center justify-center group-hover:scale-110 transition-transform duration-300 shadow-sm text-indigo-600">
+                <i data-lucide="building-2" class="w-7 h-7"></i>
             </div>
-            <span class="text-sm font-medium">Bank</span>
+            <span class="text-sm font-bold tracking-wide">Bank</span>
         </a>
         <?php if (app_can_manage_stock()): ?>
-            <a href="<?= h(app_url('inventory/index.php')) ?>" class="glass-card rounded-xl p-4 text-center hover:-translate-y-1 transition-all group flex flex-col items-center justify-center gap-2 text-gray-600 hover:text-orange-600">
-                <div class="w-12 h-12 rounded-full bg-gray-50 flex items-center justify-center group-hover:bg-orange-50 transition-colors">
-                    <i data-lucide="package" class="w-6 h-6"></i>
+            <a href="<?= h(app_url('inventory/index.php')) ?>" class="glass-card rounded-3xl p-6 text-center hover:-translate-y-2 transition-all duration-300 group flex flex-col items-center justify-center gap-3 text-gray-600 hover:text-orange-600 shadow-sm hover:shadow-xl hover:shadow-orange-500/10">
+                <div class="w-14 h-14 rounded-2xl bg-gradient-to-br from-orange-50 to-amber-100 flex items-center justify-center group-hover:scale-110 transition-transform duration-300 shadow-sm text-orange-600">
+                    <i data-lucide="package" class="w-7 h-7"></i>
                 </div>
-                <span class="text-sm font-medium">Inventory</span>
+                <span class="text-sm font-bold tracking-wide">Inventory</span>
             </a>
         <?php endif; ?>
-        <a href="<?= h(app_url('reports/index.php')) ?>" class="glass-card rounded-xl p-4 text-center hover:-translate-y-1 transition-all group flex flex-col items-center justify-center gap-2 text-gray-600 hover:text-cyan-600">
-            <div class="w-12 h-12 rounded-full bg-gray-50 flex items-center justify-center group-hover:bg-cyan-50 transition-colors">
-                <i data-lucide="bar-chart-3" class="w-6 h-6"></i>
+        <a href="<?= h(app_url('reports/index.php')) ?>" class="glass-card rounded-3xl p-6 text-center hover:-translate-y-2 transition-all duration-300 group flex flex-col items-center justify-center gap-3 text-gray-600 hover:text-cyan-600 shadow-sm hover:shadow-xl hover:shadow-cyan-500/10">
+            <div class="w-14 h-14 rounded-2xl bg-gradient-to-br from-cyan-50 to-sky-100 flex items-center justify-center group-hover:scale-110 transition-transform duration-300 shadow-sm text-cyan-600">
+                <i data-lucide="bar-chart-3" class="w-7 h-7"></i>
             </div>
-            <span class="text-sm font-medium">Reports</span>
+            <span class="text-sm font-bold tracking-wide">Reports</span>
         </a>
     </div>
 </div>

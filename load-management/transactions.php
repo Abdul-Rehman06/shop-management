@@ -262,7 +262,7 @@ require_once __DIR__ . '/../includes/sidebar.php';
                 <input class="form-control" type="text" name="notes" value="<?= h($notes) ?>">
             </div>
             <div class="col-12 col-md-3">
-                <button class="btn btn-primary w-100">Save</button>
+                <button class="btn btn-gradient shadow-glow w-100">Save</button>
             </div>
         </form>
     </div>
@@ -285,7 +285,7 @@ require_once __DIR__ . '/../includes/sidebar.php';
                 <input class="form-control" type="text" name="save_customer_phone" id="save_customer_phone" required>
             </div>
             <div class="col-12 col-md-3">
-                <button class="btn btn-primary w-100">Save Customer</button>
+                <button class="btn btn-gradient shadow-glow w-100">Save Customer</button>
             </div>
         </form>
     </div>

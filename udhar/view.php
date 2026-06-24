@@ -192,7 +192,7 @@ require_once __DIR__ . '/../includes/sidebar.php';
     </div>
     <div class="d-flex flex-wrap gap-2">
         <a class="btn btn-outline-secondary btn-sm" href="<?= h(app_url('udhar/index.php')) ?>">Back</a>
-        <a class="btn btn-primary btn-sm" href="<?= h(app_url('udhar/add.php')) ?>">Add Udhar</a>
+        <a class="btn btn-gradient shadow-glow btn-sm" href="<?= h(app_url('udhar/add.php')) ?>">Add Udhar</a>
     </div>
 </div>
 
@@ -285,7 +285,7 @@ require_once __DIR__ . '/../includes/sidebar.php';
                 <input class="form-control" type="text" id="notes" name="notes" value="<?= h($txnNotes) ?>">
             </div>
             <div class="col-12 col-md-3">
-                <button class="btn btn-primary w-100">Save</button>
+                <button class="btn btn-gradient shadow-glow w-100">Save</button>
             </div>
         </form>
     </div>

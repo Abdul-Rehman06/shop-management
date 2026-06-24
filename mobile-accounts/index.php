@@ -735,49 +735,62 @@ if ($editTxnId > 0 && $canEditDelete) {
 ?>
 
 <!-- Header -->
-<div class="d-flex align-items-center justify-content-between mb-4">
-    <div>
-        <h1 class="h4 fw-bold mb-0 text-gray-800 d-flex align-items-center gap-2">
-            <i data-lucide="wallet-cards" class="w-6 h-6 text-gray-500"></i> Mobile Accounts
-        </h1>
-        <div class="text-muted small mt-1">All transactions from both accounts are shown in one record</div>
+<div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8 animate-slide-up stagger-1">
+    <div class="flex items-center gap-3">
+        <div class="h-10 w-2 bg-gradient-premium rounded-full"></div>
+        <div>
+            <h1 class="text-3xl font-bold text-gray-900 tracking-tight m-0">Mobile Accounts</h1>
+            <p class="text-sm text-gray-500 mt-1">Manage all your digital wallets in one place</p>
+        </div>
     </div>
-    <div class="d-flex align-items-center gap-2">
-        <a class="btn btn-outline-secondary btn-sm <?= $tab === 'daily' ? 'active' : '' ?>" href="?tab=daily&date=<?= h($currentDate) ?>&type=<?= h($currentType) ?>&account_id=<?= (int) $currentAccountId ?>">Daily Entry</a>
-        <a class="btn btn-outline-secondary btn-sm <?= $tab === 'search' ? 'active' : '' ?>" href="?tab=search&from=<?= h($currentDate) ?>&to=<?= h($currentDate) ?>">Search</a>
+    <div class="flex flex-wrap items-center gap-2">
+        <a class="btn <?= $tab === 'daily' ? 'btn-gradient shadow-glow' : 'btn-outline-secondary bg-white/60 border-0 shadow-sm hover:bg-gray-50' ?> rounded-xl" href="?tab=daily&date=<?= h($currentDate) ?>&type=<?= h($currentType) ?>&account_id=<?= (int) $currentAccountId ?>">Daily Entry</a>
+        <a class="btn <?= $tab === 'search' ? 'btn-gradient shadow-glow' : 'btn-outline-secondary bg-white/60 border-0 shadow-sm hover:bg-gray-50' ?> rounded-xl" href="?tab=search&from=<?= h($currentDate) ?>&to=<?= h($currentDate) ?>">Search</a>
         <?php if ($isOwner): ?>
-            <a class="btn btn-outline-secondary btn-sm" href="<?= h(app_url('settings/accounts.php?type=' . $currentType)) ?>">Manage Accounts</a>
-            <a class="btn btn-primary btn-sm" href="<?= h(app_url('settings/accounts.php?add=1&type=' . $currentType)) ?>">Add Account</a>
+            <a class="btn btn-outline-secondary bg-white/60 border-0 shadow-sm hover:bg-gray-50 rounded-xl" href="<?= h(app_url('settings/accounts.php?type=' . $currentType)) ?>">
+                <i data-lucide="settings" class="w-4 h-4"></i> Manage
+            </a>
+            <a class="btn btn-outline-primary bg-brand-50 border-0 shadow-sm hover:bg-brand-100 rounded-xl" href="<?= h(app_url('settings/accounts.php?add=1&type=' . $currentType)) ?>">
+                <i data-lucide="plus" class="w-4 h-4"></i> Add Account
+            </a>
         <?php endif; ?>
         <?php if ($tab === 'daily'): ?>
-            <a class="btn btn-outline-primary btn-sm" href="<?= h(app_url('mobile-accounts/index.php?export=1&format=csv&tab=daily&date=' . urlencode($currentDate) . '&type=' . urlencode($currentType) . '&account_id=' . (int) $currentAccountId)) ?>">Export CSV</a>
-            <a class="btn btn-outline-primary btn-sm" href="<?= h(app_url('mobile-accounts/index.php?export=1&format=xls&tab=daily&date=' . urlencode($currentDate) . '&type=' . urlencode($currentType) . '&account_id=' . (int) $currentAccountId)) ?>">Export Excel</a>
-            <a class="btn btn-outline-primary btn-sm" href="<?= h(app_url('mobile-accounts/index.php?export=1&format=pdf&tab=daily&date=' . urlencode($currentDate) . '&type=' . urlencode($currentType) . '&account_id=' . (int) $currentAccountId)) ?>">Export PDF</a>
+            <div class="dropdown inline-block">
+                <button class="btn btn-outline-secondary bg-white/60 border-0 shadow-sm hover:bg-gray-50 rounded-xl dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+                    <i data-lucide="download" class="w-4 h-4"></i> Export
+                </button>
+                <ul class="dropdown-menu border-0 shadow-sm rounded-xl overflow-hidden">
+                    <li><a class="dropdown-item py-2" href="<?= h(app_url('mobile-accounts/index.php?export=1&format=csv&tab=daily&date=' . urlencode($currentDate) . '&type=' . urlencode($currentType) . '&account_id=' . (int) $currentAccountId)) ?>"><i data-lucide="file-text" class="w-4 h-4 inline-block mr-2 text-gray-500"></i> CSV</a></li>
+                    <li><a class="dropdown-item py-2" href="<?= h(app_url('mobile-accounts/index.php?export=1&format=xls&tab=daily&date=' . urlencode($currentDate) . '&type=' . urlencode($currentType) . '&account_id=' . (int) $currentAccountId)) ?>"><i data-lucide="file-spreadsheet" class="w-4 h-4 inline-block mr-2 text-green-600"></i> Excel</a></li>
+                    <li><a class="dropdown-item py-2 text-danger" href="<?= h(app_url('mobile-accounts/index.php?export=1&format=pdf&tab=daily&date=' . urlencode($currentDate) . '&type=' . urlencode($currentType) . '&account_id=' . (int) $currentAccountId)) ?>"><i data-lucide="file" class="w-4 h-4 inline-block mr-2"></i> PDF</a></li>
+                </ul>
+            </div>
         <?php endif; ?>
-        <form method="get" class="d-flex align-items-center gap-2 bg-white px-3 py-2 rounded-lg border border-gray-200 shadow-sm">
+        <form method="get" class="flex items-center gap-2 bg-white/80 px-3 py-1.5 rounded-xl border border-gray-100 shadow-sm backdrop-blur-sm">
             <input type="hidden" name="tab" value="<?= h($tab) ?>">
             <input type="hidden" name="type" value="<?= h($currentType) ?>">
             <input type="hidden" name="account_id" value="<?= h((string)$currentAccountId) ?>">
-            <label for="header_date" class="text-gray-500 small mb-0 fw-medium">Date</label>
-            <input type="date" id="header_date" name="date" value="<?= h($currentDate) ?>" class="form-control form-control-sm border-0 bg-transparent fw-bold text-gray-800 shadow-none p-0 w-auto" onchange="this.form.submit()">
+            <label for="header_date" class="text-gray-500 text-xs font-bold uppercase tracking-wider mb-0">Date</label>
+            <input type="date" id="header_date" name="date" value="<?= h($currentDate) ?>" class="form-control form-control-sm border-0 bg-transparent font-bold text-gray-900 shadow-none p-0 w-auto cursor-pointer focus:ring-0" onchange="this.form.submit()">
         </form>
     </div>
 </div>
 
 <?php if ($success): ?>
-    <div class="alert alert-success border-0 shadow-sm rounded-xl mb-4"><?= h($success) ?></div>
+    <div class="alert alert-success border-0 shadow-sm rounded-2xl mb-6 animate-slide-up"><?= h($success) ?></div>
 <?php endif; ?>
 <?php if ($error): ?>
-    <div class="alert alert-danger border-0 shadow-sm rounded-xl mb-4"><?= h($error) ?></div>
+    <div class="alert alert-danger border-0 shadow-sm rounded-2xl mb-6 animate-slide-up"><?= h($error) ?></div>
 <?php endif; ?>
 
 <?php if ($editTxn && $canEditDelete): ?>
-    <div class="bg-white rounded-2xl border border-gray-200 shadow-sm p-4 mb-4">
-        <div class="d-flex align-items-center justify-content-between mb-3">
-            <h2 class="h6 fw-bold text-gray-800 mb-0">Edit Transaction</h2>
-            <a class="btn btn-outline-secondary btn-sm" href="<?= h(app_url($returnUrl)) ?>">Cancel</a>
+    <div class="glass-card rounded-3xl p-6 mb-8 animate-slide-up relative overflow-hidden">
+        <div class="absolute top-0 left-0 w-full h-1 bg-gradient-premium"></div>
+        <div class="flex items-center justify-between mb-6">
+            <h2 class="text-xl font-bold text-gray-900 m-0">Edit Transaction</h2>
+            <a class="btn btn-outline-secondary bg-gray-50 border-0 shadow-sm rounded-xl" href="<?= h(app_url($returnUrl)) ?>">Cancel</a>
         </div>
-        <form method="post" class="row g-3 align-items-end">
+        <form method="post" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 items-end">
             <input type="hidden" name="action" value="update_txn">
             <input type="hidden" name="txn_id" value="<?= (int) $editTxn['id'] ?>">
             <input type="hidden" name="return_url" value="<?= h($returnUrl) ?>">
@@ -785,13 +798,13 @@ if ($editTxnId > 0 && $canEditDelete) {
             <input type="hidden" name="type" value="<?= h((string) $currentType) ?>">
             <input type="hidden" name="account_id_filter" value="<?= h((string) $currentAccountId) ?>">
 
-            <div class="col-12 col-md-2">
-                <label class="form-label">Date</label>
-                <input class="form-control" type="date" name="txn_date" value="<?= h((string) $editTxn['date']) ?>" required>
+            <div>
+                <label class="form-label text-xs uppercase tracking-wider text-gray-500 mb-1">Date</label>
+                <input class="form-control bg-gray-50 border-0 shadow-sm rounded-xl" type="date" name="txn_date" value="<?= h((string) $editTxn['date']) ?>" required>
             </div>
-            <div class="col-12 col-md-3">
-                <label class="form-label">Account</label>
-                <select class="form-select" name="txn_account_id" required>
+            <div class="md:col-span-2">
+                <label class="form-label text-xs uppercase tracking-wider text-gray-500 mb-1">Account</label>
+                <select class="form-select bg-gray-50 border-0 shadow-sm rounded-xl" name="txn_account_id" required>
                     <?php foreach ($allAccounts as $a): ?>
                         <option value="<?= (int) $a['id'] ?>" <?= (int) $a['id'] === (int) $editTxn['account_id'] ? 'selected' : '' ?>>
                             <?= h((string) $a['account_name']) ?> (<?= h((string) $a['account_type']) ?>)
@@ -799,40 +812,40 @@ if ($editTxnId > 0 && $canEditDelete) {
                     <?php endforeach; ?>
                 </select>
             </div>
-            <div class="col-12 col-md-2">
-                <label class="form-label">Type</label>
-                <select class="form-select" name="txn_type" required>
+            <div>
+                <label class="form-label text-xs uppercase tracking-wider text-gray-500 mb-1">Type</label>
+                <select class="form-select bg-gray-50 border-0 shadow-sm rounded-xl" name="txn_type" required>
                     <option value="opening" <?= (string) $editTxn['type'] === 'opening' ? 'selected' : '' ?>>Opening</option>
                     <option value="receiving" <?= (string) $editTxn['type'] === 'receiving' ? 'selected' : '' ?>>Receiving</option>
                     <option value="sending" <?= (string) $editTxn['type'] === 'sending' ? 'selected' : '' ?>>Sending</option>
                 </select>
             </div>
-            <div class="col-12 col-md-2">
-                <label class="form-label">Amount</label>
-                <input class="form-control" type="number" step="0.01" name="txn_amount" value="<?= h((string) $editTxn['amount']) ?>" required>
+            <div>
+                <label class="form-label text-xs uppercase tracking-wider text-gray-500 mb-1">Amount</label>
+                <input class="form-control bg-gray-50 border-0 shadow-sm rounded-xl" type="number" step="0.01" name="txn_amount" value="<?= h((string) $editTxn['amount']) ?>" required>
             </div>
-            <div class="col-12 col-md-2">
-                <label class="form-label">Commission</label>
-                <input class="form-control" type="number" step="0.01" name="txn_charges" value="<?= h((string) ($editTxn['charges'] ?? 0)) ?>">
+            <div>
+                <label class="form-label text-xs uppercase tracking-wider text-gray-500 mb-1">Commission</label>
+                <input class="form-control bg-gray-50 border-0 shadow-sm rounded-xl" type="number" step="0.01" name="txn_charges" value="<?= h((string) ($editTxn['charges'] ?? 0)) ?>">
             </div>
-            <div class="col-12 col-md-3">
-                <label class="form-label">Customer Name</label>
-                <input class="form-control" type="text" name="txn_customer_name" value="<?= h((string) ($editTxn['customer_name'] ?? '')) ?>">
+            <div class="md:col-span-2">
+                <label class="form-label text-xs uppercase tracking-wider text-gray-500 mb-1">Customer Name</label>
+                <input class="form-control bg-gray-50 border-0 shadow-sm rounded-xl" type="text" name="txn_customer_name" value="<?= h((string) ($editTxn['customer_name'] ?? '')) ?>">
             </div>
-            <div class="col-12 col-md-3">
-                <label class="form-label">Number</label>
-                <input class="form-control" type="text" name="txn_number" value="<?= h((string) ($editTxn['number'] ?? '')) ?>">
+            <div>
+                <label class="form-label text-xs uppercase tracking-wider text-gray-500 mb-1">Number</label>
+                <input class="form-control bg-gray-50 border-0 shadow-sm rounded-xl" type="text" name="txn_number" value="<?= h((string) ($editTxn['number'] ?? '')) ?>">
             </div>
-            <div class="col-12 col-md-3">
-                <label class="form-label">Transaction ID</label>
-                <input class="form-control" type="text" name="txn_transaction_id" value="<?= h((string) ($editTxn['transaction_id'] ?? '')) ?>">
+            <div>
+                <label class="form-label text-xs uppercase tracking-wider text-gray-500 mb-1">Transaction ID</label>
+                <input class="form-control bg-gray-50 border-0 shadow-sm rounded-xl" type="text" name="txn_transaction_id" value="<?= h((string) ($editTxn['transaction_id'] ?? '')) ?>">
             </div>
-            <div class="col-12 col-md-6">
-                <label class="form-label">Note</label>
-                <input class="form-control" type="text" name="txn_remarks" value="<?= h((string) ($editTxn['remarks'] ?? '')) ?>">
+            <div class="md:col-span-2">
+                <label class="form-label text-xs uppercase tracking-wider text-gray-500 mb-1">Note</label>
+                <input class="form-control bg-gray-50 border-0 shadow-sm rounded-xl" type="text" name="txn_remarks" value="<?= h((string) ($editTxn['remarks'] ?? '')) ?>">
             </div>
-            <div class="col-12 col-md-3">
-                <button class="btn btn-primary w-100">Save Changes</button>
+            <div class="md:col-span-4 mt-2">
+                <button class="btn btn-gradient rounded-xl px-8 shadow-md hover:shadow-lg w-full md:w-auto">Save Changes</button>
             </div>
         </form>
     </div>
@@ -879,7 +892,7 @@ if ($editTxnId > 0 && $canEditDelete) {
                 </select>
             </div>
             <div class="col-12 d-flex gap-2">
-                <button class="btn btn-primary">Search</button>
+                <button class="btn btn-gradient shadow-glow">Search</button>
                 <a class="btn btn-outline-secondary" href="?tab=search&from=<?= h($currentDate) ?>&to=<?= h($currentDate) ?>">Clear</a>
             </div>
         </form>
@@ -1000,37 +1013,50 @@ if ($editTxnId > 0 && $canEditDelete) {
 <?php endif; ?>
 
 <!-- Main Section: Select Account & Totals -->
-<div class="bg-white rounded-2xl border border-gray-200 shadow-sm p-4 p-md-5 mb-4">
-    <div class="row g-4">
+<div class="glass-card rounded-3xl p-6 md:p-8 mb-8 animate-slide-up stagger-2 relative overflow-hidden">
+    <div class="absolute right-0 top-0 w-96 h-96 bg-brand-50 rounded-full blur-[80px] -z-10 translate-x-1/2 -translate-y-1/2"></div>
+    <div class="row g-6">
         <!-- Tabs Side -->
         <div class="col-12 col-xl-7">
-            <h2 class="h6 fw-bold text-gray-800 mb-3">Select Account</h2>
+            <h2 class="text-sm font-bold text-gray-500 uppercase tracking-widest mb-4">Select Account</h2>
             
             <!-- Main Types -->
-            <div class="d-flex flex-wrap gap-2 mb-4">
+            <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
                 <?php foreach (['easypaisa', 'jazzcash', 'cash', 'bank'] as $t): 
                     $conf = $typeConfig[$t];
                     $isActive = $currentType === $t;
                     $cName = $conf['color'];
-                    $baseClass = "d-inline-flex align-items-center gap-2 px-4 py-2 rounded-pill text-sm fw-medium border transition-colors text-decoration-none";
-                    $activeClass = "bg-{$cName}-50 border-{$cName}-200 text-{$cName}-700";
-                    $inactiveClass = "bg-white border-gray-200 text-gray-600 hover:bg-gray-50";
+                    $baseClass = "flex flex-col items-center justify-center p-4 rounded-2xl border transition-all duration-300 no-underline shadow-sm gap-2 relative overflow-hidden group";
+                    $activeClass = "bg-{$cName}-50 border-{$cName}-300 ring-2 ring-{$cName}-500/20 shadow-md";
+                    $inactiveClass = "bg-white border-gray-100 hover:bg-gray-50 hover:border-gray-200 hover:-translate-y-1 hover:shadow-md";
                 ?>
                     <a href="?tab=<?= h($tab) ?>&date=<?= h($currentDate) ?>&type=<?= $t ?>&account_id=0" class="<?= $baseClass ?> <?= $isActive ? $activeClass : $inactiveClass ?>">
-                        <span class="w-2 h-2 rounded-circle <?= $isActive ? "bg-{$cName}-500" : "bg-gray-300" ?>"></span>
-                        <?= $conf['label'] ?> <?= $counts[$t] > 0 ? "({$counts[$t]})" : '' ?>
+                        <?php if ($isActive): ?>
+                            <div class="absolute inset-0 bg-gradient-to-br from-<?= $cName ?>-500/5 to-transparent pointer-events-none"></div>
+                        <?php endif; ?>
+                        <div class="w-12 h-12 rounded-full flex items-center justify-center <?= $isActive ? "bg-{$cName}-100 text-{$cName}-600 shadow-inner" : "bg-gray-100 text-gray-500 group-hover:bg-{$cName}-50 group-hover:text-{$cName}-500 transition-colors" ?>">
+                            <i data-lucide="<?= h($conf['icon']) ?>" class="w-6 h-6"></i>
+                        </div>
+                        <div class="font-bold text-sm text-center <?= $isActive ? "text-{$cName}-700" : "text-gray-700" ?>">
+                            <?= $conf['label'] ?>
+                        </div>
+                        <?php if ($counts[$t] > 0): ?>
+                            <span class="absolute top-2 right-2 flex items-center justify-center min-w-[20px] h-[20px] px-1.5 rounded-full text-[10px] font-bold <?= $isActive ? "bg-{$cName}-500 text-white shadow-sm" : "bg-gray-200 text-gray-600" ?>">
+                                <?= $counts[$t] ?>
+                            </span>
+                        <?php endif; ?>
                     </a>
                 <?php endforeach; ?>
             </div>
 
             <!-- Sub Accounts -->
             <?php if (!empty($accountsByType[$currentType])): ?>
-                <div class="d-flex flex-wrap gap-2">
+                <div class="flex flex-wrap gap-2 p-4 bg-gray-50/50 rounded-2xl border border-gray-100">
                     <?php 
                     $cName = $typeConfig[$currentType]['color'];
-                    $baseClass = "d-inline-flex align-items-center gap-2 px-3 py-1.5 rounded-pill text-xs fw-medium border transition-colors text-decoration-none";
-                    $activeClass = "bg-{$cName}-50 border-{$cName}-200 text-{$cName}-700";
-                    $inactiveClass = "bg-white border-gray-100 text-gray-500 hover:bg-gray-50";
+                    $baseClass = "inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold border transition-all duration-300 no-underline";
+                    $activeClass = "bg-white border-{$cName}-200 text-{$cName}-700 shadow-sm ring-1 ring-{$cName}-500/10";
+                    $inactiveClass = "bg-transparent border-transparent text-gray-500 hover:bg-white hover:border-gray-200 hover:shadow-sm";
                     ?>
                     <a href="?tab=<?= h($tab) ?>&date=<?= h($currentDate) ?>&type=<?= h($currentType) ?>&account_id=0" class="<?= $baseClass ?> <?= $currentAccountId === 0 ? $activeClass : $inactiveClass ?>">
                         All <?= $typeConfig[$currentType]['label'] ?>
@@ -1039,40 +1065,49 @@ if ($editTxnId > 0 && $canEditDelete) {
                         $isActive = $currentAccountId === (int)$a['id'];
                     ?>
                         <a href="?tab=<?= h($tab) ?>&date=<?= h($currentDate) ?>&type=<?= h($currentType) ?>&account_id=<?= $a['id'] ?>" class="<?= $baseClass ?> <?= $isActive ? $activeClass : $inactiveClass ?>">
-                            <span class="w-1.5 h-1.5 rounded-circle <?= $isActive ? "bg-{$cName}-500" : "bg-gray-300" ?>"></span>
+                            <span class="w-2 h-2 rounded-full <?= $isActive ? "bg-{$cName}-500 shadow-[0_0_8px_rgba(var(--color-{$cName}-500),0.6)]" : "bg-gray-300" ?>"></span>
                             <?= h($a['account_name']) ?>
-                            <span class="text-muted fw-normal ms-1"><?= h((string)$a['account_number']) ?></span>
+                            <span class="text-gray-400 font-medium ml-1"><?= h((string)$a['account_number']) ?></span>
                         </a>
                     <?php endforeach; ?>
                 </div>
             <?php else: ?>
-                <div class="text-muted small">No accounts added for this type.</div>
+                <div class="p-4 bg-gray-50 rounded-2xl border border-gray-100 text-center text-sm text-gray-500 flex items-center justify-center gap-2">
+                    <i data-lucide="inbox" class="w-4 h-4"></i> No accounts added for this type.
+                </div>
             <?php endif; ?>
         </div>
         
         <!-- Totals Side -->
         <div class="col-12 col-xl-5">
-            <div class="row g-3">
-                <div class="col-6 col-sm-3">
-                    <div class="text-xs fw-semibold text-gray-500 mb-1">Opening Balance (Today)</div>
-                    <div class="fs-5 fw-bold text-gray-900">Rs. <?= number_format($totalOpening, 2) ?></div>
+            <div class="grid grid-cols-2 gap-4">
+                <div class="bg-white/60 p-4 rounded-2xl border border-white shadow-sm hover:shadow-md transition-shadow group">
+                    <div class="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Opening (Today)</div>
+                    <div class="text-xl font-extrabold text-gray-900">Rs. <?= number_format($totalOpening, 2) ?></div>
                 </div>
-                <div class="col-6 col-sm-3">
-                    <div class="text-xs fw-semibold text-gray-500 mb-1">Total Received</div>
-                    <div class="fs-5 fw-bold text-emerald-600">Rs. <?= number_format($totalReceived, 2) ?></div>
+                <div class="bg-emerald-50/50 p-4 rounded-2xl border border-emerald-100 shadow-sm hover:shadow-md transition-shadow group">
+                    <div class="text-xs font-bold text-emerald-700 uppercase tracking-wider mb-2">Total Received</div>
+                    <div class="text-xl font-extrabold text-emerald-600">+Rs. <?= number_format($totalReceived, 2) ?></div>
                 </div>
-                <div class="col-6 col-sm-3">
-                    <div class="text-xs fw-semibold text-gray-500 mb-1">Total Sent</div>
-                    <div class="fs-5 fw-bold text-rose-600">Rs. <?= number_format($totalSent, 2) ?></div>
+                <div class="bg-rose-50/50 p-4 rounded-2xl border border-rose-100 shadow-sm hover:shadow-md transition-shadow group">
+                    <div class="text-xs font-bold text-rose-700 uppercase tracking-wider mb-2">Total Sent</div>
+                    <div class="text-xl font-extrabold text-rose-600">-Rs. <?= number_format($totalSent, 2) ?></div>
                 </div>
-                <div class="col-6 col-sm-3">
-                    <div class="text-xs fw-semibold text-gray-500 mb-1">Commission</div>
-                    <div class="fs-5 fw-bold text-emerald-600">Rs. <?= number_format($totalCommission, 2) ?></div>
+                <div class="bg-white/60 p-4 rounded-2xl border border-white shadow-sm hover:shadow-md transition-shadow group">
+                    <div class="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Commission</div>
+                    <div class="text-xl font-extrabold text-gray-900">Rs. <?= number_format($totalCommission, 2) ?></div>
                 </div>
-                <div class="col-6 col-sm-3 border-start ps-3">
-                    <div class="text-xs fw-semibold text-gray-500 mb-1">Closing Balance (Auto)</div>
-                    <div class="fs-4 fw-bold text-brand-600">Rs. <?= number_format($totalClosing, 2) ?></div>
-                    <div class="text-[10px] text-gray-400 mt-1 d-flex align-items-center gap-1"><i data-lucide="refresh-cw" class="w-3 h-3"></i> Auto calculated</div>
+                <div class="col-span-2 bg-gradient-to-r from-brand-50 to-blue-50 p-5 rounded-2xl border border-brand-100 shadow-sm relative overflow-hidden group">
+                    <div class="absolute right-0 top-0 w-32 h-32 bg-white/40 rounded-full blur-[20px] -z-10 translate-x-1/2 -translate-y-1/2"></div>
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <div class="text-xs font-bold text-brand-700 uppercase tracking-wider mb-2">Closing Balance</div>
+                            <div class="text-3xl font-extrabold text-brand-600 tracking-tight">Rs. <?= number_format($totalClosing, 2) ?></div>
+                        </div>
+                        <div class="p-3 bg-white/60 rounded-xl text-brand-500 shadow-sm">
+                            <i data-lucide="calculator" class="w-6 h-6"></i>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -1081,142 +1116,160 @@ if ($editTxnId > 0 && $canEditDelete) {
 
 <!-- Opening Balance Form -->
 <?php if (!empty($accountsByType[$currentType])): ?>
-<div class="bg-white rounded-2xl border border-gray-200 shadow-sm p-4 mb-4">
-    <h3 class="h6 fw-bold text-gray-800 flex items-center gap-2 mb-3">
-        <i data-lucide="plus" class="w-4 h-4 text-brand-500"></i> Opening Balance <span class="text-muted fw-normal fs-6">(Set once per day)</span>
-    </h3>
-    <form method="post" action="">
-        <input type="hidden" name="action" value="save_opening">
-        <input type="hidden" name="type" value="<?= h($currentType) ?>">
-        <input type="hidden" name="account_id" value="<?= h((string)$currentAccountId) ?>">
-        
-        <div class="row g-3 align-items-end">
-            <div class="col-12 col-md-3">
-                <label class="form-label text-xs fw-semibold text-gray-500 mb-1">Select Date</label>
-                <input type="date" name="date" value="<?= h($currentDate) ?>" class="form-control form-control-sm bg-gray-50 border-gray-200 rounded-lg">
-            </div>
-            
-            <?php foreach ($accountsByType[$currentType] as $a): 
-                // If specific account selected, only show that one, else show all in type
-                if ($currentAccountId > 0 && (int)$a['id'] !== $currentAccountId) continue;
-                $val = isset($openingBalances[$a['id']]) ? $openingBalances[$a['id']] : '';
-            ?>
-            <div class="col-12 col-md-auto flex-grow-1">
-                <label class="form-label text-xs fw-semibold text-<?= $typeConfig[$currentType]['color'] ?>-600 mb-1"><?= h($a['account_name']) ?></label>
-                <input type="number" step="0.01" name="balances[<?= $a['id'] ?>]" value="<?= h((string)$val) ?>" class="form-control form-control-sm border-gray-200 rounded-lg" placeholder="0.00">
-            </div>
-            <?php endforeach; ?>
-            
-            <div class="col-12 col-md-auto">
-                <button type="submit" class="btn btn-primary btn-sm rounded-lg px-4 fw-medium bg-brand-600 border-brand-600 hover:bg-brand-700 w-100"><i data-lucide="check" class="w-4 h-4 d-inline-block me-1"></i> Save Opening Balance</button>
+<div class="glass-card rounded-3xl mb-8 animate-slide-up stagger-3 relative overflow-hidden">
+    <div class="absolute top-0 left-0 w-1 h-full bg-brand-400"></div>
+    <div class="p-6 border-b border-gray-100 bg-white/40 flex items-center justify-between">
+        <div class="flex items-center gap-3">
+            <div class="p-2 bg-brand-50 text-brand-600 rounded-lg"><i data-lucide="log-in" class="w-5 h-5"></i></div>
+            <div>
+                <h3 class="text-lg font-bold text-gray-900 m-0">Opening Balance</h3>
+                <p class="text-xs text-gray-500 mt-1">Set once per day. Closing balance is auto-calculated.</p>
             </div>
         </div>
-        <div class="text-[11px] text-gray-400 mt-2">Opening balance is saved per account per day. Closing balance will be calculated automatically at the end of the day.</div>
-    </form>
+    </div>
+    <div class="p-6">
+        <form method="post" action="">
+            <input type="hidden" name="action" value="save_opening">
+            <input type="hidden" name="type" value="<?= h($currentType) ?>">
+            <input type="hidden" name="account_id" value="<?= h((string)$currentAccountId) ?>">
+            
+            <div class="flex flex-wrap gap-4 items-end">
+                <div class="w-full sm:w-48">
+                    <label class="form-label text-xs uppercase tracking-wider text-gray-500 mb-1">Select Date</label>
+                    <input type="date" name="date" value="<?= h($currentDate) ?>" class="form-control bg-gray-50 border-0 shadow-sm rounded-xl">
+                </div>
+                
+                <?php foreach ($accountsByType[$currentType] as $a): 
+                    if ($currentAccountId > 0 && (int)$a['id'] !== $currentAccountId) continue;
+                    $val = isset($openingBalances[$a['id']]) ? $openingBalances[$a['id']] : '';
+                ?>
+                <div class="flex-1 min-w-[200px]">
+                    <label class="form-label text-xs uppercase tracking-wider text-<?= $typeConfig[$currentType]['color'] ?>-600 font-bold mb-1"><?= h($a['account_name']) ?></label>
+                    <input type="number" step="0.01" name="balances[<?= $a['id'] ?>]" value="<?= h((string)$val) ?>" class="form-control bg-white border border-gray-200 shadow-sm rounded-xl" placeholder="0.00">
+                </div>
+                <?php endforeach; ?>
+                
+                <div class="w-full sm:w-auto">
+                    <button type="submit" class="btn btn-gradient rounded-xl px-6 shadow-md w-full sm:w-auto flex justify-center"><i data-lucide="check" class="w-4 h-4 mr-2"></i> Save Balances</button>
+                </div>
+            </div>
+        </form>
+    </div>
 </div>
 <?php endif; ?>
 
 <!-- Add Entry Form -->
-<div class="bg-white rounded-2xl border border-gray-200 shadow-sm p-4 mb-4">
-    <h3 class="h6 fw-bold text-gray-800 flex items-center gap-2 mb-3">
-        <i data-lucide="plus" class="w-4 h-4 text-brand-500"></i> Add Entry <span class="text-muted fw-normal fs-6">(All accounts record in one list)</span>
-    </h3>
-    <form method="post" action="">
-        <input type="hidden" name="action" value="add_entry">
-        <input type="hidden" name="type" value="<?= h($currentType) ?>">
-        <input type="hidden" name="account_id_filter" value="<?= h((string)$currentAccountId) ?>">
-        
-        <div class="row g-3">
-            <div class="col-12 col-md-2">
-                <label class="form-label text-xs fw-semibold text-gray-500 mb-1">Date</label>
-                <input type="date" name="date" value="<?= h($currentDate) ?>" class="form-control form-control-sm border-gray-200 rounded-lg" required>
+<div class="glass-card rounded-3xl mb-8 animate-slide-up stagger-4 relative overflow-hidden">
+    <div class="absolute top-0 left-0 w-1 h-full bg-emerald-400"></div>
+    <div class="p-6 border-b border-gray-100 bg-white/40 flex items-center justify-between">
+        <div class="flex items-center gap-3">
+            <div class="p-2 bg-emerald-50 text-emerald-600 rounded-lg"><i data-lucide="plus-circle" class="w-5 h-5"></i></div>
+            <div>
+                <h3 class="text-lg font-bold text-gray-900 m-0">Add New Entry</h3>
+                <p class="text-xs text-gray-500 mt-1">Record receiving or sending transactions</p>
             </div>
-            <div class="col-12 col-md-3">
-                <label class="form-label text-xs fw-semibold text-gray-500 mb-1">Account</label>
-                <select name="account_id" class="form-select form-select-sm border-gray-200 rounded-lg" required>
+        </div>
+    </div>
+    <div class="p-6">
+        <form method="post" action="" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-5">
+            <input type="hidden" name="action" value="add_entry">
+            <input type="hidden" name="type" value="<?= h($currentType) ?>">
+            <input type="hidden" name="account_id_filter" value="<?= h((string)$currentAccountId) ?>">
+            
+            <div>
+                <label class="form-label text-xs uppercase tracking-wider text-gray-500 mb-1">Date</label>
+                <input type="date" name="date" value="<?= h($currentDate) ?>" class="form-control bg-gray-50 border-0 shadow-sm rounded-xl" required>
+            </div>
+            <div>
+                <label class="form-label text-xs uppercase tracking-wider text-gray-500 mb-1">Account</label>
+                <select name="account_id" class="form-select bg-gray-50 border-0 shadow-sm rounded-xl" required>
                     <?php foreach ($accountsByType[$currentType] as $a): ?>
                         <option value="<?= $a['id'] ?>" <?= $currentAccountId === (int)$a['id'] ? 'selected' : '' ?>><?= h($a['account_name']) ?></option>
                     <?php endforeach; ?>
                 </select>
             </div>
-            <div class="col-12 col-md-2">
-                <label class="form-label text-xs fw-semibold text-gray-500 mb-1">Type</label>
-                <select name="entry_type" class="form-select form-select-sm border-gray-200 rounded-lg bg-gray-50" required>
+            <div>
+                <label class="form-label text-xs uppercase tracking-wider text-gray-500 mb-1">Type</label>
+                <select name="entry_type" class="form-select bg-emerald-50 border-0 shadow-sm rounded-xl text-emerald-700 font-bold" required>
                     <option value="receiving">Receiving (Money In)</option>
                     <option value="sending">Sending (Money Out)</option>
                 </select>
             </div>
-            <div class="col-12 col-md-2">
-                <label class="form-label text-xs fw-semibold text-gray-500 mb-1">Amount (Rs)</label>
-                <input type="number" step="0.01" name="amount" class="form-control form-control-sm border-gray-200 rounded-lg" required placeholder="500">
+            <div>
+                <label class="form-label text-xs uppercase tracking-wider text-gray-500 mb-1">Amount (Rs)</label>
+                <input type="number" step="0.01" name="amount" class="form-control bg-white border border-gray-200 shadow-sm rounded-xl text-lg font-bold text-gray-900" required placeholder="0.00">
             </div>
-            <div class="col-12 col-md-2">
-                <label class="form-label text-xs fw-semibold text-gray-500 mb-1">Commission (Rs)</label>
-                <input type="number" step="0.01" name="charges" class="form-control form-control-sm border-gray-200 rounded-lg" placeholder="0.00">
+            
+            <div>
+                <label class="form-label text-xs uppercase tracking-wider text-gray-500 mb-1">Commission (Rs)</label>
+                <input type="number" step="0.01" name="charges" class="form-control bg-gray-50 border-0 shadow-sm rounded-xl" placeholder="0.00">
             </div>
-            <div class="col-12 col-md-3">
-                <label class="form-label text-xs fw-semibold text-gray-500 mb-1">Saved Customer</label>
-                <select class="form-select form-select-sm border-gray-200 rounded-lg" id="saved_customer_select">
-                    <option value="">-- Select --</option>
+            <div>
+                <label class="form-label text-xs uppercase tracking-wider text-gray-500 mb-1">Saved Customer</label>
+                <select class="form-select bg-gray-50 border-0 shadow-sm rounded-xl" id="saved_customer_select">
+                    <option value="">-- Select Customer --</option>
                     <?php foreach ($savedCustomers as $c): ?>
                         <option value="<?= (int) $c['id'] ?>" data-name="<?= h((string) $c['name']) ?>" data-phone="<?= h((string) $c['phone']) ?>">
                             <?= h((string) $c['name']) ?> • <?= h((string) $c['phone']) ?>
                         </option>
                     <?php endforeach; ?>
                 </select>
-                <div class="mt-2 d-flex gap-2">
-                    <button type="button" class="btn btn-outline-secondary btn-sm w-100" id="btn_show_add_customer">Add New</button>
-                    <a class="btn btn-outline-secondary btn-sm w-100" href="<?= h(app_url('settings/customers.php')) ?>">All</a>
+                <div class="mt-2 flex gap-2">
+                    <button type="button" class="btn btn-outline-secondary btn-sm rounded-lg flex-1 text-xs" id="btn_show_add_customer">Add New</button>
+                    <a class="btn btn-outline-secondary btn-sm rounded-lg flex-1 text-xs" href="<?= h(app_url('settings/customers.php')) ?>">View All</a>
                 </div>
-                <?php if (!$savedCustomers): ?>
-                    <div class="text-muted small mt-1">No saved customers yet.</div>
-                <?php endif; ?>
             </div>
-            <div class="col-12 col-md-3">
-                <label class="form-label text-xs fw-semibold text-gray-500 mb-1">Customer Name</label>
-                <input type="text" name="customer_name" class="form-control form-control-sm border-gray-200 rounded-lg" placeholder="Ali Khan">
+            <div>
+                <label class="form-label text-xs uppercase tracking-wider text-gray-500 mb-1">Customer Name</label>
+                <input type="text" name="customer_name" class="form-control bg-gray-50 border-0 shadow-sm rounded-xl" placeholder="Ali Khan">
+            </div>
+            <div>
+                <label class="form-label text-xs uppercase tracking-wider text-gray-500 mb-1">Phone Number <span class="text-danger">*</span></label>
+                <input type="text" name="number" class="form-control bg-gray-50 border-0 shadow-sm rounded-xl font-medium tracking-wide" placeholder="03xx-xxxxxxx">
             </div>
             
-            <div class="col-12 col-md-3">
-                <label class="form-label text-xs fw-semibold text-gray-500 mb-1">Apna Number <span class="text-danger">*</span></label>
-                <input type="text" name="number" class="form-control form-control-sm border-gray-200 rounded-lg" placeholder="03xx-xxxxxxx">
+            <div class="md:col-span-2">
+                <label class="form-label text-xs uppercase tracking-wider text-gray-500 mb-1">Transaction ID</label>
+                <input type="text" name="transaction_id" class="form-control bg-gray-50 border-0 shadow-sm rounded-xl font-mono text-sm" placeholder="TXN123456789">
             </div>
-            <div class="col-12 col-md-3">
-                <label class="form-label text-xs fw-semibold text-gray-500 mb-1">Transaction ID</label>
-                <input type="text" name="transaction_id" class="form-control form-control-sm border-gray-200 rounded-lg" placeholder="TXN12345">
+            <div class="md:col-span-2">
+                <label class="form-label text-xs uppercase tracking-wider text-gray-500 mb-1">Note (optional)</label>
+                <input type="text" name="remarks" class="form-control bg-gray-50 border-0 shadow-sm rounded-xl" placeholder="Any additional details...">
             </div>
-            <div class="col-12 col-md-4">
-                <label class="form-label text-xs fw-semibold text-gray-500 mb-1">Note (optional)</label>
-                <input type="text" name="remarks" class="form-control form-control-sm border-gray-200 rounded-lg" placeholder="Any info...">
+            
+            <div class="md:col-span-4 mt-2">
+                <button type="submit" class="btn btn-gradient rounded-xl px-8 py-3 shadow-md hover:shadow-lg w-full md:w-auto text-base font-bold"><i data-lucide="plus" class="w-5 h-5 mr-2"></i> Save Entry</button>
             </div>
-            <div class="col-12 col-md-2 d-flex align-items-end">
-                <button type="submit" class="btn btn-primary btn-sm rounded-lg px-4 fw-medium bg-brand-600 border-brand-600 hover:bg-brand-700 w-100"><i data-lucide="plus" class="w-4 h-4 d-inline-block me-1"></i> Save Entry</button>
-            </div>
-        </div>
-    </form>
+        </form>
+    </div>
 </div>
 
-<div class="bg-white rounded-2xl border border-gray-200 shadow-sm p-4 mb-4 d-none" id="add_customer_panel">
-    <div class="d-flex align-items-center justify-content-between mb-3">
-        <div class="fw-semibold text-gray-800">Add Customer</div>
-        <button type="button" class="btn btn-outline-secondary btn-sm" id="btn_hide_add_customer">Close</button>
+<div class="glass-card rounded-3xl p-6 mb-8 animate-slide-up shadow-sm hidden relative overflow-hidden" id="add_customer_panel">
+    <div class="absolute top-0 left-0 w-1 h-full bg-blue-400"></div>
+    <div class="flex items-center justify-between mb-6">
+        <div class="flex items-center gap-3">
+            <div class="p-2 bg-blue-50 text-blue-600 rounded-lg"><i data-lucide="user-plus" class="w-5 h-5"></i></div>
+            <h3 class="text-lg font-bold text-gray-900 m-0">Add Customer</h3>
+        </div>
+        <button type="button" class="btn btn-outline-secondary bg-gray-50 border-0 shadow-sm rounded-xl" id="btn_hide_add_customer">Close</button>
     </div>
-    <form method="post" class="row g-3 align-items-end">
+    <form method="post" class="grid grid-cols-1 sm:grid-cols-3 gap-4 items-end">
         <input type="hidden" name="action" value="save_customer">
         <input type="hidden" name="return_url" value="<?= h($returnUrl) ?>">
         <input type="hidden" name="date" value="<?= h((string) $currentDate) ?>">
         <input type="hidden" name="type" value="<?= h((string) $currentType) ?>">
         <input type="hidden" name="account_id_filter" value="<?= h((string) $currentAccountId) ?>">
-        <div class="col-12 col-md-5">
-            <label class="form-label">Customer Name</label>
-            <input class="form-control" type="text" name="customer_name" id="new_customer_name" required>
+        
+        <div>
+            <label class="form-label text-xs uppercase tracking-wider text-gray-500 mb-1">Customer Name</label>
+            <input class="form-control bg-gray-50 border-0 shadow-sm rounded-xl" type="text" name="customer_name" id="new_customer_name" required>
         </div>
-        <div class="col-12 col-md-4">
-            <label class="form-label">Phone</label>
-            <input class="form-control" type="text" name="customer_phone" id="new_customer_phone" required>
+        <div>
+            <label class="form-label text-xs uppercase tracking-wider text-gray-500 mb-1">Phone</label>
+            <input class="form-control bg-gray-50 border-0 shadow-sm rounded-xl" type="text" name="customer_phone" id="new_customer_phone" required>
         </div>
-        <div class="col-12 col-md-3">
-            <button class="btn btn-primary w-100">Save Customer</button>
+        <div>
+            <button class="btn btn-gradient rounded-xl px-6 shadow-md hover:shadow-lg w-full">Save Customer</button>
         </div>
     </form>
 </div>

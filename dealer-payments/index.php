@@ -133,30 +133,32 @@ require_once __DIR__ . '/../includes/sidebar.php';
 
 ?>
 
-<div class="d-flex flex-wrap gap-2 align-items-center justify-content-between mb-3">
+<div class="d-flex flex-wrap gap-3 align-items-center justify-content-between mb-4 animate-slide-up">
     <div>
-        <h1 class="h4 mb-0">Dealer Payments</h1>
-        <div class="text-muted small">Maintain payments made to load dealers</div>
+        <h1 class="h3 mb-1 text-gray-800 font-bold tracking-tight">Dealer Payments</h1>
+        <p class="text-gray-500 text-sm mb-0">Maintain payments made to load dealers</p>
     </div>
     <div class="d-flex flex-wrap gap-2">
-        <a class="btn btn-primary btn-sm" href="<?= h(app_url('dealer-payments/add.php')) ?>">Add Payment</a>
+        <a class="btn btn-gradient shadow-glow rounded-xl" href="<?= h(app_url('dealer-payments/add.php')) ?>">
+            <i data-lucide="plus" class="w-4 h-4"></i> Add Payment
+        </a>
     </div>
 </div>
 
 <?php if ($success !== ''): ?>
-    <div class="alert alert-success"><?= h($success) ?></div>
+    <div class="alert alert-success border-0 shadow-sm animate-slide-up"><?= h($success) ?></div>
 <?php endif; ?>
 
 <?php if ($error !== ''): ?>
-    <div class="alert alert-danger"><?= h($error) ?></div>
+    <div class="alert alert-danger border-0 shadow-sm animate-slide-up"><?= h($error) ?></div>
 <?php endif; ?>
 
-<div class="card border-0 shadow-sm mb-3">
-    <div class="card-body">
+<div class="glass-card mb-4 animate-slide-up stagger-1">
+    <div class="card-body p-4">
         <form method="get" class="row g-3 align-items-end">
             <div class="col-12 col-md-3">
-                <label class="form-label">Dealer</label>
-                <select class="form-select" name="dealer">
+                <label class="form-label small fw-bold text-gray-600 uppercase tracking-wider">Dealer</label>
+                <select class="form-select bg-light border-0 shadow-sm rounded-xl" name="dealer">
                     <option value="">All</option>
                     <?php foreach ($dealerNames as $d): ?>
                         <option value="<?= h($d) ?>" <?= $dealer === $d ? 'selected' : '' ?>><?= h($d) ?></option>
@@ -164,8 +166,8 @@ require_once __DIR__ . '/../includes/sidebar.php';
                 </select>
             </div>
             <div class="col-12 col-md-2">
-                <label class="form-label">Network</label>
-                <select class="form-select" name="network">
+                <label class="form-label small fw-bold text-gray-600 uppercase tracking-wider">Network</label>
+                <select class="form-select bg-light border-0 shadow-sm rounded-xl" name="network">
                     <option value="">All</option>
                     <?php foreach ($networks as $n): ?>
                         <option value="<?= h($n) ?>" <?= $network === $n ? 'selected' : '' ?>><?= h($n) ?></option>
@@ -173,74 +175,78 @@ require_once __DIR__ . '/../includes/sidebar.php';
                 </select>
             </div>
             <div class="col-6 col-md-2">
-                <label class="form-label">From</label>
-                <input class="form-control" type="date" name="from" value="<?= h($from) ?>">
+                <label class="form-label small fw-bold text-gray-600 uppercase tracking-wider">From</label>
+                <input class="form-control bg-light border-0 shadow-sm rounded-xl" type="date" name="from" value="<?= h($from) ?>">
             </div>
             <div class="col-6 col-md-2">
-                <label class="form-label">To</label>
-                <input class="form-control" type="date" name="to" value="<?= h($to) ?>">
+                <label class="form-label small fw-bold text-gray-600 uppercase tracking-wider">To</label>
+                <input class="form-control bg-light border-0 shadow-sm rounded-xl" type="date" name="to" value="<?= h($to) ?>">
             </div>
             <div class="col-12 col-md-3 d-flex gap-2">
-                <button class="btn btn-outline-primary w-100">Filter</button>
-                <a class="btn btn-outline-secondary w-100" href="<?= h(app_url('dealer-payments/index.php')) ?>">Clear</a>
+                <button class="btn btn-gradient w-100 shadow-sm rounded-xl">Filter</button>
+                <a class="btn btn-outline-secondary bg-white/60 border-0 shadow-sm hover-lift w-100 rounded-xl" href="<?= h(app_url('dealer-payments/index.php')) ?>">Clear</a>
             </div>
         </form>
     </div>
 </div>
 
-<div class="row g-3 mb-3">
+<div class="row g-4 mb-4 animate-slide-up stagger-2">
     <div class="col-12 col-md-3">
-        <div class="card border-0 shadow-sm">
-            <div class="card-body">
-                <div class="text-muted small">Total Payments (Range)</div>
-                <div class="h5 mb-0"><?= h(number_format($rangeTotal, 2)) ?></div>
-            </div>
+        <div class="p-4 bg-light rounded-4 border-start border-primary border-4 h-100 transition-all hover-lift">
+            <div class="text-muted small fw-bold text-uppercase tracking-wider mb-2">Total Payments (Range)</div>
+            <div class="h4 mb-0 font-bold text-primary"><?= h(number_format($rangeTotal, 2)) ?></div>
         </div>
     </div>
     <div class="col-12 col-md-3">
-        <div class="card border-0 shadow-sm">
-            <div class="card-body">
-                <div class="text-muted small">Today Payments</div>
-                <div class="h5 mb-0"><?= h(number_format($todayTotal, 2)) ?></div>
-            </div>
+        <div class="p-4 bg-light rounded-4 border-start border-success border-4 h-100 transition-all hover-lift">
+            <div class="text-muted small fw-bold text-uppercase tracking-wider mb-2">Today Payments</div>
+            <div class="h4 mb-0 font-bold text-success"><?= h(number_format($todayTotal, 2)) ?></div>
         </div>
     </div>
     <div class="col-12 col-md-3">
-        <div class="card border-0 shadow-sm">
-            <div class="card-body">
-                <div class="text-muted small">Monthly Payments</div>
-                <div class="h5 mb-0"><?= h(number_format($monthTotal, 2)) ?></div>
-            </div>
+        <div class="p-4 bg-light rounded-4 border-start border-info border-4 h-100 transition-all hover-lift">
+            <div class="text-muted small fw-bold text-uppercase tracking-wider mb-2">Monthly Payments</div>
+            <div class="h4 mb-0 font-bold text-info"><?= h(number_format($monthTotal, 2)) ?></div>
         </div>
     </div>
     <div class="col-12 col-md-3">
-        <div class="card border-0 shadow-sm">
-            <div class="card-body">
-                <div class="text-muted small">Remaining Payable (Range)</div>
-                <div class="h5 mb-0"><?= h(number_format($remainingPayableTotal, 2)) ?></div>
-            </div>
+        <div class="p-4 bg-light rounded-4 border-start border-warning border-4 h-100 transition-all hover-lift">
+            <div class="text-muted small fw-bold text-uppercase tracking-wider mb-2">Remaining Payable</div>
+            <div class="h4 mb-0 font-bold text-warning"><?= h(number_format($remainingPayableTotal, 2)) ?></div>
         </div>
     </div>
 </div>
 
-<div class="row g-3 mb-3">
+<div class="row g-4 mb-4 animate-slide-up stagger-3">
     <div class="col-12 col-lg-6">
-        <div class="card border-0 shadow-sm h-100">
-            <div class="card-body">
-                <div class="fw-semibold mb-2">Total Payment by Dealer</div>
+        <div class="glass-card h-100">
+            <div class="card-body p-4">
+                <div class="d-flex align-items-center gap-2 mb-4">
+                    <div class="bg-primary bg-opacity-10 p-2 rounded-3 text-primary">
+                        <i data-lucide="users" class="w-5 h-5"></i>
+                    </div>
+                    <h5 class="fw-bold mb-0 text-gray-800">Total Payment by Dealer</h5>
+                </div>
                 <div class="table-responsive">
-                    <table class="table table-sm mb-0">
-                        <thead class="table-light">
+                    <table class="table table-hover align-middle mb-0 custom-table border-0">
+                        <thead class="bg-light bg-opacity-50">
                         <tr>
-                            <th>Dealer</th>
-                            <th class="text-end">Total</th>
+                            <th class="border-0 px-3 py-2 text-uppercase text-xs font-bold text-gray-500 tracking-wider">Dealer</th>
+                            <th class="border-0 px-3 py-2 text-uppercase text-xs font-bold text-gray-500 tracking-wider text-end">Total</th>
                         </tr>
                         </thead>
-                        <tbody>
+                        <tbody class="border-top-0">
                         <?php foreach ($dealerNames as $d): ?>
-                            <tr>
-                                <td><?= h($d) ?></td>
-                                <td class="text-end"><?= h(number_format((float) ($totalsByDealer[$d] ?? 0), 2)) ?></td>
+                            <tr class="transition-all hover-bg-light">
+                                <td class="px-3 py-2 border-0 border-bottom text-gray-700 fw-medium">
+                                    <div class="d-flex align-items-center gap-2">
+                                        <div class="avatar-circle bg-gray-100 text-gray-600 fw-bold flex items-center justify-center flex-shrink-0" style="width:28px;height:28px;font-size:11px;">
+                                            <?= h(strtoupper(substr($d, 0, 1))) ?>
+                                        </div>
+                                        <span class="text-truncate"><?= h($d) ?></span>
+                                    </div>
+                                </td>
+                                <td class="px-3 py-2 border-0 border-bottom text-end font-bold text-primary"><?= h(number_format((float) ($totalsByDealer[$d] ?? 0), 2)) ?></td>
                             </tr>
                         <?php endforeach; ?>
                         </tbody>
@@ -250,24 +256,34 @@ require_once __DIR__ . '/../includes/sidebar.php';
         </div>
     </div>
     <div class="col-12 col-lg-6">
-        <div class="card border-0 shadow-sm h-100">
-            <div class="card-body">
-                <div class="fw-semibold mb-2">Network-wise Payments / Payable (Range)</div>
+        <div class="glass-card h-100">
+            <div class="card-body p-4">
+                <div class="d-flex align-items-center gap-2 mb-4">
+                    <div class="bg-brand-50 p-2 rounded-3 text-brand-600">
+                        <i data-lucide="smartphone" class="w-5 h-5"></i>
+                    </div>
+                    <h5 class="fw-bold mb-0 text-gray-800">Network-wise Payments / Payable <span class="text-muted fw-normal fs-6">(Range)</span></h5>
+                </div>
                 <div class="table-responsive">
-                    <table class="table table-sm mb-0">
-                        <thead class="table-light">
+                    <table class="table table-hover align-middle mb-0 custom-table border-0">
+                        <thead class="bg-light bg-opacity-50">
                         <tr>
-                            <th>Network</th>
-                            <th class="text-end">Paid</th>
-                            <th class="text-end">Payable</th>
+                            <th class="border-0 px-3 py-2 text-uppercase text-xs font-bold text-gray-500 tracking-wider">Network</th>
+                            <th class="border-0 px-3 py-2 text-uppercase text-xs font-bold text-gray-500 tracking-wider text-end">Paid</th>
+                            <th class="border-0 px-3 py-2 text-uppercase text-xs font-bold text-gray-500 tracking-wider text-end">Payable</th>
                         </tr>
                         </thead>
-                        <tbody>
+                        <tbody class="border-top-0">
                         <?php foreach ($networks as $n): ?>
-                            <tr>
-                                <td><?= h($n) ?></td>
-                                <td class="text-end"><?= h(number_format((float) ($totalsByNetwork[$n] ?? 0), 2)) ?></td>
-                                <td class="text-end"><?= h(number_format((float) ($remainingPayableByNetwork[$n] ?? 0), 2)) ?></td>
+                            <tr class="transition-all hover-bg-light">
+                                <td class="px-3 py-2 border-0 border-bottom text-gray-700 fw-medium">
+                                    <div class="d-flex align-items-center gap-2">
+                                        <span class="w-2 h-2 rounded-full bg-brand-500"></span>
+                                        <?= h($n) ?>
+                                    </div>
+                                </td>
+                                <td class="px-3 py-2 border-0 border-bottom text-end font-bold text-success"><?= h(number_format((float) ($totalsByNetwork[$n] ?? 0), 2)) ?></td>
+                                <td class="px-3 py-2 border-0 border-bottom text-end font-bold text-warning"><?= h(number_format((float) ($remainingPayableByNetwork[$n] ?? 0), 2)) ?></td>
                             </tr>
                         <?php endforeach; ?>
                         </tbody>
@@ -278,34 +294,38 @@ require_once __DIR__ . '/../includes/sidebar.php';
     </div>
 </div>
 
-<div class="card border-0 shadow-sm">
+<div class="glass-card animate-slide-up stagger-4">
     <div class="card-body p-0">
         <div class="table-responsive">
-            <table class="table table-striped table-hover align-middle mb-0">
-                <thead class="table-light">
+            <table class="table table-hover align-middle mb-0 custom-table">
+                <thead class="bg-light bg-opacity-50">
                 <tr>
-                    <th>Date</th>
-                    <th>Dealer</th>
-                    <th>Network</th>
-                    <th class="text-end">Amount</th>
-                    <th>Notes</th>
-                    <th>Created At</th>
+                    <th class="border-0 px-4 py-3 text-uppercase text-xs font-bold text-gray-500 tracking-wider">Date</th>
+                    <th class="border-0 px-4 py-3 text-uppercase text-xs font-bold text-gray-500 tracking-wider">Dealer</th>
+                    <th class="border-0 px-4 py-3 text-uppercase text-xs font-bold text-gray-500 tracking-wider">Network</th>
+                    <th class="border-0 px-4 py-3 text-uppercase text-xs font-bold text-gray-500 tracking-wider text-end">Amount</th>
+                    <th class="border-0 px-4 py-3 text-uppercase text-xs font-bold text-gray-500 tracking-wider">Notes</th>
+                    <th class="border-0 px-4 py-3 text-uppercase text-xs font-bold text-gray-500 tracking-wider">Created At</th>
                     <?php if ($canEditDelete): ?>
-                        <th class="text-end">Actions</th>
+                        <th class="border-0 px-4 py-3 text-uppercase text-xs font-bold text-gray-500 tracking-wider text-end">Actions</th>
                     <?php endif; ?>
                 </tr>
                 </thead>
-                <tbody>
+                <tbody class="border-top-0">
                 <?php foreach ($rows as $r): ?>
-                    <tr>
-                        <td><?= h((string) $r['payment_date']) ?></td>
-                        <td><?= h((string) $r['dealer_name']) ?></td>
-                        <td><?= h((string) $r['network']) ?></td>
-                        <td class="text-end"><?= h(number_format((float) $r['amount'], 2)) ?></td>
-                        <td><?= h((string) ($r['notes'] ?? '')) ?></td>
-                        <td><?= h((string) $r['created_at']) ?></td>
+                    <tr class="transition-all hover-bg-light">
+                        <td class="px-4 py-3 font-medium text-gray-600"><?= h((string) $r['payment_date']) ?></td>
+                        <td class="px-4 py-3 fw-bold text-gray-800"><?= h((string) $r['dealer_name']) ?></td>
+                        <td class="px-4 py-3">
+                            <span class="badge bg-brand-50 text-brand-600 px-2 py-1 rounded border border-brand-100">
+                                <?= h((string) $r['network']) ?>
+                            </span>
+                        </td>
+                        <td class="px-4 py-3 text-end font-bold text-primary"><?= h(number_format((float) $r['amount'], 2)) ?></td>
+                        <td class="px-4 py-3 text-gray-600"><?= h((string) ($r['notes'] ?? '')) ?></td>
+                        <td class="px-4 py-3 text-muted small"><?= h((string) $r['created_at']) ?></td>
                         <?php if ($canEditDelete): ?>
-                            <td class="text-end">
+                            <td class="px-4 py-3 text-end">
                                 <a class="btn btn-outline-secondary btn-sm" href="<?= h(app_url('dealer-payments/edit.php?id=' . (int) $r['id'])) ?>">Edit</a>
                                 <a class="btn btn-outline-danger btn-sm" href="<?= h(app_url('dealer-payments/delete.php?id=' . (int) $r['id'])) ?>">Delete</a>
                             </td>
@@ -314,7 +334,12 @@ require_once __DIR__ . '/../includes/sidebar.php';
                 <?php endforeach; ?>
                 <?php if (!$rows): ?>
                     <tr>
-                        <td colspan="<?= h((string) (6 + ($canEditDelete ? 1 : 0))) ?>" class="text-center text-muted py-4">No payments found.</td>
+                        <td colspan="<?= h((string) (6 + ($canEditDelete ? 1 : 0))) ?>" class="text-center text-muted py-5">
+                            <div class="d-flex flex-column align-items-center justify-content-center">
+                                <i data-lucide="users" class="w-8 h-8 text-gray-300 mb-2"></i>
+                                <p class="mb-0">No payments found.</p>
+                            </div>
+                        </td>
                     </tr>
                 <?php endif; ?>
                 </tbody>

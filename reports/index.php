@@ -148,67 +148,79 @@ require_once __DIR__ . '/../includes/sidebar.php';
 
 ?>
 
-<div class="d-flex flex-wrap gap-2 align-items-center justify-content-between mb-3">
-    <h1 class="h4 mb-0">Reports</h1>
-    <div class="d-flex flex-wrap gap-2">
-        <a class="btn btn-outline-secondary btn-sm" href="<?= h(app_url('reports/export.php?format=csv&' . $baseQueryString)) ?>">CSV</a>
-        <a class="btn btn-outline-secondary btn-sm" href="<?= h(app_url('reports/export.php?format=xls&' . $baseQueryString)) ?>">Excel</a>
-        <a class="btn btn-outline-secondary btn-sm" href="<?= h(app_url('reports/export.php?format=pdf&' . $baseQueryString)) ?>">PDF</a>
+<div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8 animate-slide-up stagger-1">
+    <div class="flex items-center gap-3">
+        <div class="h-10 w-2 bg-gradient-premium rounded-full"></div>
+        <div>
+            <h1 class="text-3xl font-bold text-gray-900 tracking-tight m-0">Reports</h1>
+            <p class="text-sm text-gray-500 mt-1">Detailed analytics and exports</p>
+        </div>
+    </div>
+    <div class="flex flex-wrap gap-2">
+        <a class="btn btn-outline-secondary bg-white/60 hover:bg-gray-50 border-0 shadow-sm" href="<?= h(app_url('reports/export.php?format=csv&' . $baseQueryString)) ?>">
+            <i data-lucide="file-text" class="w-4 h-4 text-gray-500"></i> CSV
+        </a>
+        <a class="btn btn-outline-secondary bg-white/60 hover:bg-green-50 border-0 shadow-sm text-green-700 hover:text-green-800" href="<?= h(app_url('reports/export.php?format=xls&' . $baseQueryString)) ?>">
+            <i data-lucide="file-spreadsheet" class="w-4 h-4 text-green-600"></i> Excel
+        </a>
+        <a class="btn btn-outline-danger bg-white/60 hover:bg-red-50 border-0 shadow-sm" href="<?= h(app_url('reports/export.php?format=pdf&' . $baseQueryString)) ?>">
+            <i data-lucide="file" class="w-4 h-4"></i> PDF
+        </a>
     </div>
 </div>
 
 <?php if ($topCards): ?>
-    <div class="row g-3 mb-3">
+    <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6 mb-8 animate-slide-up stagger-2">
         <?php foreach ($topCards as $c): ?>
-            <div class="col-12 col-md-3">
-                <div class="card border-0 shadow-sm h-100">
-                    <div class="card-body">
-                        <div class="text-muted small"><?= h((string) ($c['label'] ?? '')) ?></div>
-                        <div class="h5 mb-0">Rs <?= h((string) ($c['value'] ?? '0.00')) ?></div>
-                        <div class="text-muted small mt-1"><?= h((string) ($filters['from'] ?? '')) ?> to <?= h((string) ($filters['to'] ?? '')) ?></div>
-                    </div>
+            <div class="glass-card rounded-3xl p-6 relative overflow-hidden group">
+                <div class="absolute -right-6 -top-6 w-24 h-24 bg-brand-50 rounded-full group-hover:scale-150 transition-transform duration-500 ease-out z-0 opacity-50"></div>
+                <div class="relative z-10">
+                    <div class="text-xs font-bold text-gray-500 uppercase tracking-widest mb-2"><?= h((string) ($c['label'] ?? '')) ?></div>
+                    <div class="text-2xl font-extrabold text-gray-900 tracking-tight">Rs <?= h((string) ($c['value'] ?? '0.00')) ?></div>
+                    <div class="text-xs font-medium text-gray-400 mt-2 bg-gray-50/50 px-2 py-1 rounded-lg inline-block"><?= h((string) ($filters['from'] ?? '')) ?> to <?= h((string) ($filters['to'] ?? '')) ?></div>
                 </div>
             </div>
         <?php endforeach; ?>
     </div>
 <?php endif; ?>
 
-<div class="card border-0 shadow-sm mb-3">
-    <div class="card-body">
-        <form method="get" class="row g-3 align-items-end">
-            <div class="col-12 col-md-3">
-                <label class="form-label" for="range">Range</label>
-                <select class="form-select" id="range" name="range">
+<div class="glass-card rounded-3xl mb-8 animate-slide-up stagger-3 relative overflow-hidden">
+    <div class="absolute top-0 left-0 w-full h-1 bg-gradient-premium"></div>
+    <div class="p-6">
+        <form method="get" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-4 items-end">
+            <div>
+                <label class="form-label text-xs uppercase tracking-wider text-gray-500 mb-1" for="range">Range</label>
+                <select class="form-select bg-gray-50 border-0 shadow-sm rounded-xl" id="range" name="range" onchange="this.form.submit()">
                     <option value="today" <?= ($filters['range'] ?? 'today') === 'today' ? 'selected' : '' ?>>Today</option>
                     <option value="7days" <?= ($filters['range'] ?? '') === '7days' ? 'selected' : '' ?>>Last 7 Days</option>
                     <option value="month" <?= ($filters['range'] ?? '') === 'month' ? 'selected' : '' ?>>This Month</option>
                     <option value="custom" <?= ($filters['range'] ?? '') === 'custom' ? 'selected' : '' ?>>Custom</option>
                 </select>
             </div>
-            <div class="col-12 col-md-3">
-                <label class="form-label" for="module">Report</label>
-                <select class="form-select" id="module" name="module">
+            <div>
+                <label class="form-label text-xs uppercase tracking-wider text-gray-500 mb-1" for="module">Report</label>
+                <select class="form-select bg-gray-50 border-0 shadow-sm rounded-xl" id="module" name="module">
                     <?php foreach ($modules as $key => $label): ?>
                         <option value="<?= h($key) ?>" <?= $filters['module'] === $key ? 'selected' : '' ?>><?= h($label) ?></option>
                     <?php endforeach; ?>
                 </select>
             </div>
-            <div class="col-12 col-md-3">
-                <label class="form-label" for="from">From</label>
-                <input class="form-control" type="date" id="from" name="from" value="<?= h($filters['from']) ?>" required>
+            <div>
+                <label class="form-label text-xs uppercase tracking-wider text-gray-500 mb-1" for="from">From</label>
+                <input class="form-control bg-gray-50 border-0 shadow-sm rounded-xl" type="date" id="from" name="from" value="<?= h($filters['from']) ?>" required>
             </div>
-            <div class="col-12 col-md-3">
-                <label class="form-label" for="to">To</label>
-                <input class="form-control" type="date" id="to" name="to" value="<?= h($filters['to']) ?>" required>
+            <div>
+                <label class="form-label text-xs uppercase tracking-wider text-gray-500 mb-1" for="to">To</label>
+                <input class="form-control bg-gray-50 border-0 shadow-sm rounded-xl" type="date" id="to" name="to" value="<?= h($filters['to']) ?>" required>
             </div>
-            <div class="col-12 col-md-3">
-                <button class="btn btn-primary w-100">Filter</button>
+            <div>
+                <button class="btn btn-gradient w-full rounded-xl py-2.5 shadow-md">Apply Filters</button>
             </div>
 
             <?php if ($filters['module'] === 'load'): ?>
-                <div class="col-12 col-md-3">
-                    <label class="form-label" for="network">Network</label>
-                    <select class="form-select" id="network" name="network">
+                <div>
+                    <label class="form-label text-xs uppercase tracking-wider text-gray-500 mb-1" for="network">Network</label>
+                    <select class="form-select bg-gray-50 border-0 shadow-sm rounded-xl" id="network" name="network">
                         <option value="">All</option>
                         <?php foreach ($networks as $n): ?>
                             <option value="<?= h($n) ?>" <?= $filters['network'] === $n ? 'selected' : '' ?>><?= h($n) ?></option>
@@ -216,18 +228,18 @@ require_once __DIR__ . '/../includes/sidebar.php';
                     </select>
                 </div>
             <?php elseif (in_array($filters['module'], ['easypaisa', 'jazzcash', 'bank'], true)): ?>
-                <div class="col-12 col-md-3">
-                    <label class="form-label" for="type">Transaction Type</label>
-                    <select class="form-select" id="type" name="type">
+                <div>
+                    <label class="form-label text-xs uppercase tracking-wider text-gray-500 mb-1" for="type">Transaction Type</label>
+                    <select class="form-select bg-gray-50 border-0 shadow-sm rounded-xl" id="type" name="type">
                         <option value="">All</option>
                         <option value="receiving" <?= $filters['type'] === 'receiving' ? 'selected' : '' ?>>Receiving</option>
                         <option value="sending" <?= $filters['type'] === 'sending' ? 'selected' : '' ?>>Sending</option>
                     </select>
                 </div>
             <?php elseif ($filters['module'] === 'expenses'): ?>
-                <div class="col-12 col-md-3">
-                    <label class="form-label" for="type">Category</label>
-                    <select class="form-select" id="type" name="type">
+                <div>
+                    <label class="form-label text-xs uppercase tracking-wider text-gray-500 mb-1" for="type">Category</label>
+                    <select class="form-select bg-gray-50 border-0 shadow-sm rounded-xl" id="type" name="type">
                         <option value="">All</option>
                         <?php foreach (['Rent','Bills','Salary','Maintenance','Other'] as $c): ?>
                             <option value="<?= h($c) ?>" <?= $filters['type'] === $c ? 'selected' : '' ?>><?= h($c) ?></option>
@@ -240,31 +252,36 @@ require_once __DIR__ . '/../includes/sidebar.php';
 </div>
 
 <?php if ($filters['module'] === 'all'): ?>
-    <?php foreach ($modules as $key => $label): ?>
-        <?php if ($key === 'all') continue; ?>
-        <?php $d = $allReports[$key] ?? ['headers' => [], 'rows' => [], 'summary' => []]; ?>
-        <div class="card border-0 shadow-sm mb-3">
-            <div class="card-body">
-                <div class="d-flex flex-wrap gap-2 align-items-center justify-content-between mb-2">
-                    <div class="fw-semibold"><?= h($label) ?></div>
-                    <a class="btn btn-outline-secondary btn-sm" href="<?= h(app_url('reports/index.php?module=' . urlencode($key) . '&range=' . urlencode((string) ($filters['range'] ?? 'today')) . '&from=' . urlencode($filters['from']) . '&to=' . urlencode($filters['to']))) ?>">Open</a>
+    <div class="grid grid-cols-1 gap-6 animate-slide-up stagger-4">
+        <?php foreach ($modules as $key => $label): ?>
+            <?php if ($key === 'all') continue; ?>
+            <?php $d = $allReports[$key] ?? ['headers' => [], 'rows' => [], 'summary' => []]; ?>
+            <div class="glass-card rounded-3xl overflow-hidden group">
+                <div class="p-5 bg-white/50 border-b border-gray-100 flex flex-wrap gap-4 items-center justify-between">
+                    <div class="flex items-center gap-3">
+                        <div class="p-2 bg-brand-50 text-brand-600 rounded-lg group-hover:scale-110 transition-transform"><i data-lucide="folder-open" class="w-5 h-5"></i></div>
+                        <div class="text-lg font-bold text-gray-900"><?= h($label) ?></div>
+                    </div>
+                    <a class="btn btn-outline-primary btn-sm rounded-xl bg-white hover:bg-brand-50" href="<?= h(app_url('reports/index.php?module=' . urlencode($key) . '&range=' . urlencode((string) ($filters['range'] ?? 'today')) . '&from=' . urlencode($filters['from']) . '&to=' . urlencode($filters['to']))) ?>">
+                        Open Details <i data-lucide="arrow-right" class="w-4 h-4"></i>
+                    </a>
                 </div>
 
                 <?php if (!empty($d['summary'])): ?>
-                    <div class="row g-2 mb-2">
-                        <?php foreach ($d['summary'] as $k => $v): ?>
-                            <div class="col-6 col-md-3">
-                                <div class="border rounded p-2">
-                                    <div class="text-muted small"><?= h((string) $k) ?></div>
-                                    <div class="fw-semibold"><?= h((string) $v) ?></div>
+                    <div class="p-5 bg-gray-50/30 border-b border-gray-100">
+                        <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                            <?php foreach ($d['summary'] as $k => $v): ?>
+                                <div class="bg-white rounded-2xl p-4 border border-gray-100 shadow-sm hover:shadow-md transition-shadow">
+                                    <div class="text-xs font-bold text-gray-500 uppercase tracking-wider mb-1"><?= h((string) $k) ?></div>
+                                    <div class="text-lg font-extrabold text-gray-900"><?= h((string) $v) ?></div>
                                 </div>
-                            </div>
-                        <?php endforeach; ?>
+                            <?php endforeach; ?>
+                        </div>
                     </div>
                 <?php endif; ?>
 
-                <div class="table-responsive">
-                    <table class="table table-striped table-hover align-middle mb-0">
+                <div class="table-responsive p-0">
+                    <table class="table table-hover align-middle mb-0">
                         <thead class="table-light">
                         <tr>
                             <?php foreach (($d['headers'] ?? []) as $hcol): ?>
@@ -282,58 +299,60 @@ require_once __DIR__ . '/../includes/sidebar.php';
                         <?php endforeach; ?>
                         <?php if (empty($d['rows'])): ?>
                             <tr>
-                                <td colspan="<?= h((string) max(1, count((array) ($d['headers'] ?? [])))) ?>" class="text-center text-muted py-3">No data found.</td>
+                                <td colspan="<?= h((string) max(1, count((array) ($d['headers'] ?? [])))) ?>" class="text-center text-gray-400 py-8 font-medium">No data found in this period.</td>
                             </tr>
                         <?php endif; ?>
                         </tbody>
                     </table>
                 </div>
             </div>
-        </div>
-    <?php endforeach; ?>
+        <?php endforeach; ?>
+    </div>
 <?php else: ?>
     <?php if (!empty($data['summary'])): ?>
-        <div class="row g-3 mb-3">
+        <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-6 mb-8 animate-slide-up stagger-4">
             <?php foreach ($data['summary'] as $k => $v): ?>
-                <div class="col-12 col-md-3">
-                    <div class="card border-0 shadow-sm">
-                        <div class="card-body">
-                            <div class="text-muted small"><?= h((string) $k) ?></div>
-                            <div class="h6 mb-0"><?= h((string) $v) ?></div>
-                        </div>
+                <div class="glass-card rounded-3xl p-6 relative overflow-hidden group">
+                    <div class="absolute -right-4 -top-4 w-20 h-20 bg-brand-50 rounded-full group-hover:scale-150 transition-transform duration-500 ease-out z-0 opacity-50"></div>
+                    <div class="relative z-10">
+                        <div class="text-xs font-bold text-gray-500 uppercase tracking-widest mb-2"><?= h((string) $k) ?></div>
+                        <div class="text-2xl font-extrabold text-gray-900"><?= h((string) $v) ?></div>
                     </div>
                 </div>
             <?php endforeach; ?>
         </div>
     <?php endif; ?>
 
-    <div class="card border-0 shadow-sm">
-        <div class="card-body p-0">
-            <div class="table-responsive">
-                <table class="table table-striped table-hover align-middle mb-0">
-                    <thead class="table-light">
+    <div class="glass-card rounded-3xl overflow-hidden animate-slide-up stagger-5 shadow-sm">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="table-light">
+                <tr>
+                    <?php foreach ($data['headers'] as $hcol): ?>
+                        <th><?= h((string) $hcol) ?></th>
+                    <?php endforeach; ?>
+                </tr>
+                </thead>
+                <tbody>
+                <?php foreach ($data['rows'] as $row): ?>
                     <tr>
-                        <?php foreach ($data['headers'] as $hcol): ?>
-                            <th><?= h((string) $hcol) ?></th>
+                        <?php foreach ($row as $cell): ?>
+                            <td><?= h((string) $cell) ?></td>
                         <?php endforeach; ?>
                     </tr>
-                    </thead>
-                    <tbody>
-                    <?php foreach ($data['rows'] as $row): ?>
-                        <tr>
-                            <?php foreach ($row as $cell): ?>
-                                <td><?= h((string) $cell) ?></td>
-                            <?php endforeach; ?>
-                        </tr>
-                    <?php endforeach; ?>
-                    <?php if (!$data['rows']): ?>
-                        <tr>
-                            <td colspan="<?= h((string) count($data['headers'])) ?>" class="text-center text-muted py-4">No data found.</td>
-                        </tr>
-                    <?php endif; ?>
-                    </tbody>
-                </table>
-            </div>
+                <?php endforeach; ?>
+                <?php if (!$data['rows']): ?>
+                    <tr>
+                        <td colspan="<?= h((string) count($data['headers'])) ?>" class="text-center text-gray-400 py-10 font-medium">
+                            <div class="flex flex-col items-center justify-center gap-2">
+                                <i data-lucide="search-x" class="w-8 h-8 text-gray-300"></i>
+                                No data found for the selected criteria.
+                            </div>
+                        </td>
+                    </tr>
+                <?php endif; ?>
+                </tbody>
+            </table>
         </div>
     </div>
 <?php endif; ?>

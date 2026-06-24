@@ -33,75 +33,77 @@ require_once __DIR__ . '/../includes/sidebar.php';
 
 ?>
 
-<div class="d-flex flex-wrap gap-2 align-items-center justify-content-between mb-4">
+<div class="d-flex flex-wrap gap-3 align-items-center justify-content-between mb-4 animate-slide-up">
     <div>
-        <h1 class="h3 mb-1 text-gray-900 font-bold tracking-tight">Sales Management</h1>
+        <h1 class="h3 mb-1 text-gray-800 font-bold tracking-tight">Sales Management</h1>
         <p class="text-gray-500 text-sm mb-0">Track all your product sales<?= $canViewProfit ? ' and profits' : '' ?></p>
     </div>
     <div class="d-flex flex-wrap gap-2">
         <?php if ($canViewProfit): ?>
-            <a class="btn btn-secondary btn-sm" href="<?= h(app_url('reports/index.php?module=sales')) ?>">
-                <i data-lucide="bar-chart-3" class="w-4 h-4"></i> Reports
+            <a class="btn btn-outline-secondary bg-white/60 border-0 shadow-sm hover-lift rounded-xl" href="<?= h(app_url('reports/index.php?module=sales')) ?>">
+                <i data-lucide="bar-chart-3" class="w-4 h-4 text-gray-600"></i> Reports
             </a>
         <?php endif; ?>
-        <a class="btn btn-primary btn-sm" href="<?= h(app_url('sales/add.php')) ?>">
+        <a class="btn btn-gradient shadow-glow rounded-xl" href="<?= h(app_url('sales/add.php')) ?>">
             <i data-lucide="shopping-cart" class="w-4 h-4"></i> Add Sale
         </a>
     </div>
 </div>
 
 <?php if ($success !== ''): ?>
-    <div class="alert alert-success"><?= h($success) ?></div>
+    <div class="alert alert-success border-0 shadow-sm animate-slide-up"><?= h($success) ?></div>
 <?php endif; ?>
 
 <?php if ($error !== ''): ?>
-    <div class="alert alert-danger"><?= h($error) ?></div>
+    <div class="alert alert-danger border-0 shadow-sm animate-slide-up"><?= h($error) ?></div>
 <?php endif; ?>
 
-<div class="card border-0 shadow-sm">
+<div class="glass-card animate-slide-up stagger-1">
     <div class="card-body p-0">
         <div class="table-responsive">
-            <table class="table table-striped table-hover align-middle mb-0">
-                <thead class="table-light">
+            <table class="table table-hover align-middle mb-0 custom-table">
+                <thead class="bg-light bg-opacity-50">
                 <tr>
-                    <th>Date/Time</th>
-                    <th>Product</th>
-                    <th class="text-end">Qty</th>
-                    <th class="text-end">Returned</th>
-                    <th class="text-end">Sale Price</th>
-                    <th class="text-end">Total</th>
+                    <th class="border-0 px-4 py-3 text-uppercase text-xs font-bold text-gray-500 tracking-wider">Date/Time</th>
+                    <th class="border-0 px-4 py-3 text-uppercase text-xs font-bold text-gray-500 tracking-wider">Product</th>
+                    <th class="border-0 px-4 py-3 text-uppercase text-xs font-bold text-gray-500 tracking-wider text-end">Qty</th>
+                    <th class="border-0 px-4 py-3 text-uppercase text-xs font-bold text-gray-500 tracking-wider text-end">Returned</th>
+                    <th class="border-0 px-4 py-3 text-uppercase text-xs font-bold text-gray-500 tracking-wider text-end">Sale Price</th>
+                    <th class="border-0 px-4 py-3 text-uppercase text-xs font-bold text-gray-500 tracking-wider text-end">Total</th>
                     <?php if ($canViewProfit): ?>
-                        <th class="text-end">Profit</th>
+                        <th class="border-0 px-4 py-3 text-uppercase text-xs font-bold text-gray-500 tracking-wider text-end">Profit</th>
                     <?php endif; ?>
-                    <th class="text-end">Return/Exchange</th>
+                    <th class="border-0 px-4 py-3 text-uppercase text-xs font-bold text-gray-500 tracking-wider text-end">Return/Exchange</th>
                     <?php if ($canEditDelete): ?>
-                        <th class="text-end">Actions</th>
+                        <th class="border-0 px-4 py-3 text-uppercase text-xs font-bold text-gray-500 tracking-wider text-end">Actions</th>
                     <?php endif; ?>
                 </tr>
                 </thead>
-                <tbody>
+                <tbody class="border-top-0">
                 <?php foreach ($rows as $r): ?>
                     <?php $total = (int) $r['quantity'] * (float) $r['sale_price']; ?>
                     <?php
                     $returnedQty = (int) ($r['returned_qty'] ?? 0);
                     $remainingQty = max(0, (int) $r['quantity'] - $returnedQty);
                     ?>
-                    <tr>
-                        <td><?= h((string) $r['created_at']) ?></td>
-                        <td><?= h((string) $r['product_name']) ?></td>
-                        <td class="text-end"><?= h((string) (int) $r['quantity']) ?></td>
-                        <td class="text-end"><?= h((string) $returnedQty) ?></td>
-                        <td class="text-end"><?= h(number_format((float) $r['sale_price'], 2)) ?></td>
-                        <td class="text-end"><?= h(number_format((float) $total, 2)) ?></td>
+                    <tr class="transition-all hover-bg-light">
+                        <td class="px-4 py-3 font-medium text-gray-600"><?= h((string) $r['created_at']) ?></td>
+                        <td class="px-4 py-3">
+                            <span class="fw-bold text-gray-800"><?= h((string) $r['product_name']) ?></span>
+                        </td>
+                        <td class="px-4 py-3 text-end font-bold text-primary"><?= h((string) (int) $r['quantity']) ?></td>
+                        <td class="px-4 py-3 text-end <?= $returnedQty > 0 ? 'text-warning font-bold' : 'text-gray-400' ?>"><?= h((string) $returnedQty) ?></td>
+                        <td class="px-4 py-3 text-end text-gray-600"><?= h(number_format((float) $r['sale_price'], 2)) ?></td>
+                        <td class="px-4 py-3 text-end font-bold text-success"><?= h(number_format((float) $total, 2)) ?></td>
                         <?php if ($canViewProfit): ?>
-                            <td class="text-end"><?= h(number_format((float) $r['profit'], 2)) ?></td>
+                            <td class="px-4 py-3 text-end font-medium text-green-600"><?= h(number_format((float) $r['profit'], 2)) ?></td>
                         <?php endif; ?>
-                        <td class="text-end">
-                            <a class="btn btn-outline-primary btn-sm <?= $remainingQty <= 0 ? 'disabled' : '' ?>" href="<?= h(app_url('sales/return.php?id=' . (int) $r['id'])) ?>">Return</a>
-                            <a class="btn btn-outline-primary btn-sm <?= $remainingQty <= 0 ? 'disabled' : '' ?>" href="<?= h(app_url('sales/exchange.php?id=' . (int) $r['id'])) ?>">Exchange</a>
+                        <td class="px-4 py-3 text-end">
+                            <a class="btn btn-outline-warning btn-sm <?= $remainingQty <= 0 ? 'disabled' : '' ?>" href="<?= h(app_url('sales/return.php?id=' . (int) $r['id'])) ?>">Return</a>
+                            <a class="btn btn-outline-info btn-sm <?= $remainingQty <= 0 ? 'disabled' : '' ?>" href="<?= h(app_url('sales/exchange.php?id=' . (int) $r['id'])) ?>">Exchange</a>
                         </td>
                         <?php if ($canEditDelete): ?>
-                            <td class="text-end">
+                            <td class="px-4 py-3 text-end">
                                 <a class="btn btn-outline-secondary btn-sm" href="<?= h(app_url('sales/edit.php?id=' . (int) $r['id'])) ?>">Edit</a>
                                 <a class="btn btn-outline-danger btn-sm" href="<?= h(app_url('sales/delete.php?id=' . (int) $r['id'])) ?>">Delete</a>
                             </td>
@@ -110,7 +112,12 @@ require_once __DIR__ . '/../includes/sidebar.php';
                 <?php endforeach; ?>
                 <?php if (!$rows): ?>
                     <tr>
-                        <td colspan="<?= h((string) (7 + ($canViewProfit ? 1 : 0) + ($canEditDelete ? 1 : 0))) ?>" class="text-center text-muted py-4">No sales yet.</td>
+                        <td colspan="<?= h((string) (8 + ($canViewProfit ? 1 : 0) + ($canEditDelete ? 1 : 0))) ?>" class="text-center text-muted py-5">
+                            <div class="d-flex flex-column align-items-center justify-content-center">
+                                <i data-lucide="shopping-cart" class="w-8 h-8 text-gray-300 mb-2"></i>
+                                <p class="mb-0">No sales yet.</p>
+                            </div>
+                        </td>
                     </tr>
                 <?php endif; ?>
                 </tbody>

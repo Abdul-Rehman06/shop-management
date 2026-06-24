@@ -222,7 +222,7 @@ require_once __DIR__ . '/../includes/sidebar.php';
                         <input class="form-control" type="text" id="password" name="password" required>
                     </div>
                     <div class="col-12">
-                        <button class="btn btn-primary w-100">Create User</button>
+                        <button class="btn btn-gradient shadow-glow w-100">Create User</button>
                     </div>
                 </form>
             </div>

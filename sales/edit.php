@@ -126,7 +126,7 @@ require_once __DIR__ . '/../includes/sidebar.php';
             </div>
 
             <div class="mt-3">
-                <button class="btn btn-primary">Save Changes</button>
+                <button class="btn btn-gradient shadow-glow">Save Changes</button>
             </div>
         </form>
     </div>

@@ -142,7 +142,7 @@ require_once __DIR__ . '/../includes/sidebar.php';
     <h1 class="h4 mb-0">Accounts</h1>
     <div class="d-flex flex-wrap gap-2">
         <a class="btn btn-outline-secondary btn-sm" href="<?= h(app_url('settings/index.php')) ?>">Back</a>
-        <a class="btn btn-primary btn-sm" href="<?= h(app_url('settings/accounts.php?add=1' . ($filterType !== '' ? ('&type=' . urlencode($filterType)) : ''))) ?>">Add Account</a>
+        <a class="btn btn-gradient shadow-glow btn-sm" href="<?= h(app_url('settings/accounts.php?add=1' . ($filterType !== '' ? ('&type=' . urlencode($filterType)) : ''))) ?>">Add Account</a>
     </div>
 </div>
 
@@ -273,7 +273,7 @@ require_once __DIR__ . '/../includes/sidebar.php';
                         </div>
 
                         <div class="col-12">
-                            <button class="btn btn-primary"><?= $isEdit ? 'Save Changes' : 'Add Account' ?></button>
+                            <button class="btn btn-gradient shadow-glow"><?= $isEdit ? 'Save Changes' : 'Add Account' ?></button>
                         </div>
                     </form>
                 </div>

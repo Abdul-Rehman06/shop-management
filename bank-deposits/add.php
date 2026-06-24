@@ -172,7 +172,7 @@ require_once __DIR__ . '/../includes/sidebar.php';
                 <input class="form-control" type="text" id="note" name="note" value="<?= h($note) ?>">
             </div>
             <div class="col-12">
-                <button class="btn btn-primary">Save Deposit</button>
+                <button class="btn btn-gradient shadow-glow">Save Deposit</button>
             </div>
         </form>
     </div>

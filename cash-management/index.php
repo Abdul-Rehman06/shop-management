@@ -300,110 +300,108 @@ require_once __DIR__ . '/../includes/sidebar.php';
 
 ?>
 
-<div class="d-flex flex-wrap gap-2 align-items-center justify-content-between mb-3">
+<div class="d-flex flex-wrap gap-3 align-items-center justify-content-between mb-4 animate-slide-up">
     <div>
-        <h1 class="h4 mb-0">Cash Management</h1>
-        <div class="text-muted small">Expected cash vs actual cash (drawer reconciliation)</div>
+        <h1 class="h3 mb-1 text-gray-800 font-bold">Cash Management</h1>
+        <div class="text-gray-500 text-sm">Expected cash vs actual cash (drawer reconciliation)</div>
     </div>
-    <form method="get" class="d-flex gap-2 align-items-end">
+    <form method="get" class="d-flex gap-2 align-items-end bg-light p-2 rounded-4">
         <div>
-            <label class="form-label mb-0">Date</label>
-            <input class="form-control" type="date" name="date" value="<?= h($date) ?>">
+            <label class="form-label mb-1 small fw-bold text-gray-600 px-1">Date</label>
+            <input class="form-control border-0 bg-white shadow-sm" type="date" name="date" value="<?= h($date) ?>">
         </div>
-        <button class="btn btn-outline-primary">Go</button>
+        <button class="btn btn-gradient shadow-glow shadow-sm hover-lift px-4">Go</button>
     </form>
 </div>
 
 <?php if ($success !== ''): ?>
-    <div class="alert alert-success"><?= h($success) ?></div>
+    <div class="alert alert-success border-0 shadow-sm animate-slide-up"><?= h($success) ?></div>
 <?php endif; ?>
 
 <?php if ($error !== ''): ?>
-    <div class="alert alert-danger"><?= h($error) ?></div>
+    <div class="alert alert-danger border-0 shadow-sm animate-slide-up"><?= h($error) ?></div>
 <?php endif; ?>
 
-<div class="row g-3 mb-3">
+<div class="row g-4 mb-4 animate-slide-up stagger-1">
     <div class="col-12 col-md-3">
-        <div class="card border-0 shadow-sm">
-            <div class="card-body">
-                <div class="text-muted small">Opening Cash</div>
-                <div class="h5 mb-0"><?= h(number_format($openingCash, 2)) ?></div>
-            </div>
+        <div class="p-3 bg-light rounded-4 border-start border-primary border-4 h-100 transition-all hover-lift">
+            <div class="text-muted small fw-medium mb-1 text-uppercase tracking-wider">Opening Cash</div>
+            <div class="h4 mb-0 font-bold text-primary"><?= h(number_format($openingCash, 2)) ?></div>
         </div>
     </div>
     <div class="col-12 col-md-3">
-        <div class="card border-0 shadow-sm">
-            <div class="card-body">
-                <div class="text-muted small">Total Cash Received</div>
-                <div class="h5 mb-0"><?= h(number_format($cashReceivedTotal, 2)) ?></div>
-            </div>
+        <div class="p-3 bg-light rounded-4 border-start border-success border-4 h-100 transition-all hover-lift">
+            <div class="text-muted small fw-medium mb-1 text-uppercase tracking-wider">Total Cash Received</div>
+            <div class="h4 mb-0 font-bold text-success"><?= h(number_format($cashReceivedTotal, 2)) ?></div>
         </div>
     </div>
     <div class="col-12 col-md-3">
-        <div class="card border-0 shadow-sm">
-            <div class="card-body">
-                <div class="text-muted small">Total Cash Sent</div>
-                <div class="h5 mb-0"><?= h(number_format($cashSentTotal, 2)) ?></div>
-            </div>
+        <div class="p-3 bg-light rounded-4 border-start border-danger border-4 h-100 transition-all hover-lift">
+            <div class="text-muted small fw-medium mb-1 text-uppercase tracking-wider">Total Cash Sent</div>
+            <div class="h4 mb-0 font-bold text-danger"><?= h(number_format($cashSentTotal, 2)) ?></div>
         </div>
     </div>
     <div class="col-12 col-md-3">
-        <div class="card border-0 shadow-sm">
-            <div class="card-body">
-                <div class="text-muted small">Expected Cash (Drawer)</div>
-                <div class="h5 mb-0"><?= h(number_format($expectedCash, 2)) ?></div>
-            </div>
+        <div class="p-3 bg-gradient-premium rounded-4 border-0 h-100 transition-all hover-lift text-white shadow">
+            <div class="text-white-50 small fw-medium mb-1 text-uppercase tracking-wider">Expected Cash (Drawer)</div>
+            <div class="h3 mb-0 font-bold"><?= h(number_format($expectedCash, 2)) ?></div>
         </div>
     </div>
 </div>
 
-<div class="row g-3 mb-3">
+<div class="row g-4 mb-4 animate-slide-up stagger-2">
     <div class="col-12 col-lg-6">
-        <div class="card border-0 shadow-sm h-100">
-            <div class="card-body">
-                <div class="fw-semibold mb-2">Cash Breakdown (<?= h($date) ?>)</div>
+        <div class="glass-card h-100">
+            <div class="card-body p-4">
+                <div class="d-flex align-items-center gap-2 mb-4">
+                    <div class="bg-primary bg-opacity-10 p-2 rounded-3 text-primary">
+                        <i data-lucide="pie-chart" class="w-5 h-5"></i>
+                    </div>
+                    <h5 class="fw-bold mb-0 text-gray-800">Cash Breakdown <span class="text-muted fw-normal fs-6">(<?= h($date) ?>)</span></h5>
+                </div>
+                
                 <div class="table-responsive">
-                    <table class="table table-sm mb-0">
-                        <tbody>
-                        <tr>
-                            <td>Sales</td>
-                            <td class="text-end"><?= h(number_format($salesTotal, 2)) ?></td>
+                    <table class="table table-hover align-middle mb-0 custom-table border-0">
+                        <tbody class="border-top-0">
+                        <tr class="transition-all hover-bg-light">
+                            <td class="px-3 py-3 border-0 border-bottom text-gray-700">Sales</td>
+                            <td class="px-3 py-3 border-0 border-bottom text-end font-medium text-success">+ <?= h(number_format($salesTotal, 2)) ?></td>
                         </tr>
-                        <tr>
-                            <td>Load Sales</td>
-                            <td class="text-end"><?= h(number_format($loadSales, 2)) ?></td>
+                        <tr class="transition-all hover-bg-light">
+                            <td class="px-3 py-3 border-0 border-bottom text-gray-700">Load Sales</td>
+                            <td class="px-3 py-3 border-0 border-bottom text-end font-medium text-success">+ <?= h(number_format($loadSales, 2)) ?></td>
                         </tr>
-                        <tr>
-                            <td>Udhar Recovery</td>
-                            <td class="text-end"><?= h(number_format($udharRecovery, 2)) ?></td>
+                        <tr class="transition-all hover-bg-light">
+                            <td class="px-3 py-3 border-0 border-bottom text-gray-700">Udhar Recovery</td>
+                            <td class="px-3 py-3 border-0 border-bottom text-end font-medium text-success">+ <?= h(number_format($udharRecovery, 2)) ?></td>
                         </tr>
-                        <tr>
-                            <td>Customer Advance (Credit)</td>
-                            <td class="text-end"><?= h(number_format($creditAdvance, 2)) ?></td>
+                        <tr class="transition-all hover-bg-light">
+                            <td class="px-3 py-3 border-0 border-bottom text-gray-700">Customer Advance (Credit)</td>
+                            <td class="px-3 py-3 border-0 border-bottom text-end font-medium text-success">+ <?= h(number_format($creditAdvance, 2)) ?></td>
                         </tr>
-                        <tr>
-                            <td>Cash Receiving (Manual)</td>
-                            <td class="text-end"><?= h(number_format($walletCashReceived, 2)) ?></td>
+                        <tr class="transition-all hover-bg-light">
+                            <td class="px-3 py-3 border-0 border-bottom text-gray-700">Cash Receiving (Manual)</td>
+                            <td class="px-3 py-3 border-0 border-bottom text-end font-medium text-success">+ <?= h(number_format($walletCashReceived, 2)) ?></td>
                         </tr>
-                        <tr>
-                            <td>Cash Received (Wallet Sending)</td>
-                            <td class="text-end"><?= h(number_format($nonCashSending, 2)) ?></td>
+                        <tr class="transition-all hover-bg-light">
+                            <td class="px-3 py-3 border-0 border-bottom text-gray-700">Cash Received (Wallet Sending)</td>
+                            <td class="px-3 py-3 border-0 border-bottom text-end font-medium text-success">+ <?= h(number_format($nonCashSending, 2)) ?></td>
                         </tr>
-                        <tr>
-                            <td>Cash Sending (Manual)</td>
-                            <td class="text-end"><?= h(number_format($walletCashSent, 2)) ?></td>
+                        <tr class="transition-all hover-bg-light bg-danger bg-opacity-10">
+                            <td class="px-3 py-3 border-0 border-bottom text-gray-700">Cash Sending (Manual)</td>
+                            <td class="px-3 py-3 border-0 border-bottom text-end font-medium text-danger">- <?= h(number_format($walletCashSent, 2)) ?></td>
                         </tr>
-                        <tr>
-                            <td>Cash Sent (Wallet Receiving)</td>
-                            <td class="text-end"><?= h(number_format($nonCashReceiving, 2)) ?></td>
+                        <tr class="transition-all hover-bg-light bg-danger bg-opacity-10">
+                            <td class="px-3 py-3 border-0 border-bottom text-gray-700">Cash Sent (Wallet Receiving)</td>
+                            <td class="px-3 py-3 border-0 border-bottom text-end font-medium text-danger">- <?= h(number_format($nonCashReceiving, 2)) ?></td>
                         </tr>
-                        <tr>
-                            <td>Expenses</td>
-                            <td class="text-end"><?= h(number_format($expensesTotal, 2)) ?></td>
+                        <tr class="transition-all hover-bg-light bg-danger bg-opacity-10">
+                            <td class="px-3 py-3 border-0 border-bottom text-gray-700">Expenses</td>
+                            <td class="px-3 py-3 border-0 border-bottom text-end font-medium text-danger">- <?= h(number_format($expensesTotal, 2)) ?></td>
                         </tr>
-                        <tr>
-                            <td>Dealer Payments</td>
-                            <td class="text-end"><?= h(number_format($dealerPayments, 2)) ?></td>
+                        <tr class="transition-all hover-bg-light bg-danger bg-opacity-10">
+                            <td class="px-3 py-3 border-0 border-bottom text-gray-700">Dealer Payments</td>
+                            <td class="px-3 py-3 border-0 border-bottom text-end font-medium text-danger">- <?= h(number_format($dealerPayments, 2)) ?></td>
                         </tr>
                         </tbody>
                     </table>
@@ -412,29 +410,35 @@ require_once __DIR__ . '/../includes/sidebar.php';
         </div>
     </div>
     <div class="col-12 col-lg-6">
-        <div class="card border-0 shadow-sm h-100">
-            <div class="card-body">
-                <div class="fw-semibold mb-2">Add Cash Entry</div>
-                <form method="post" class="row g-3 align-items-end mb-4">
+        <div class="glass-card h-100">
+            <div class="card-body p-4">
+                <div class="d-flex align-items-center gap-2 mb-4">
+                    <div class="bg-success bg-opacity-10 p-2 rounded-3 text-success">
+                        <i data-lucide="plus-circle" class="w-5 h-5"></i>
+                    </div>
+                    <h5 class="fw-bold mb-0 text-gray-800">Add Cash Entry</h5>
+                </div>
+                
+                <form method="post" class="row g-3 align-items-end mb-5 bg-light p-3 rounded-4 border-0">
                     <input type="hidden" name="action" value="add_cash_entry">
                     <div class="col-12 col-md-4">
-                        <label class="form-label" for="entry_date">Date</label>
-                        <input class="form-control" type="date" id="entry_date" name="entry_date" value="<?= h($date) ?>" required>
+                        <label class="form-label small fw-bold text-gray-600" for="entry_date">Date</label>
+                        <input class="form-control border-0 shadow-sm" type="date" id="entry_date" name="entry_date" value="<?= h($date) ?>" required>
                     </div>
                     <div class="col-12 col-md-4">
-                        <label class="form-label" for="entry_type">Type</label>
-                        <select class="form-select" id="entry_type" name="entry_type" required>
+                        <label class="form-label small fw-bold text-gray-600" for="entry_type">Type</label>
+                        <select class="form-select border-0 shadow-sm" id="entry_type" name="entry_type" required>
                             <option value="receiving">Cash Received</option>
                             <option value="sending">Cash Sent</option>
                         </select>
                     </div>
                     <div class="col-12 col-md-4">
-                        <label class="form-label" for="entry_amount">Amount</label>
-                        <input class="form-control" type="number" step="0.01" id="entry_amount" name="entry_amount" required>
+                        <label class="form-label small fw-bold text-gray-600" for="entry_amount">Amount</label>
+                        <input class="form-control border-0 shadow-sm" type="number" step="0.01" id="entry_amount" name="entry_amount" required>
                     </div>
                     <div class="col-12 col-md-6">
-                        <label class="form-label" for="entry_customer_id">Customer (Optional)</label>
-                        <select class="form-select" id="entry_customer_id" name="entry_customer_id">
+                        <label class="form-label small fw-bold text-gray-600" for="entry_customer_id">Customer (Optional)</label>
+                        <select class="form-select border-0 shadow-sm" id="entry_customer_id" name="entry_customer_id">
                             <option value="0">-- Select --</option>
                             <?php foreach ($savedCustomers as $c): ?>
                                 <option value="<?= (int) $c['id'] ?>"><?= h((string) $c['name']) ?> • <?= h((string) $c['phone']) ?></option>
@@ -442,31 +446,43 @@ require_once __DIR__ . '/../includes/sidebar.php';
                         </select>
                     </div>
                     <div class="col-12 col-md-6">
-                        <label class="form-label" for="entry_notes">Notes</label>
-                        <input class="form-control" type="text" id="entry_notes" name="entry_notes">
+                        <label class="form-label small fw-bold text-gray-600" for="entry_notes">Notes</label>
+                        <input class="form-control border-0 shadow-sm" type="text" id="entry_notes" name="entry_notes">
                     </div>
-                    <div class="col-12">
-                        <button class="btn btn-outline-primary">Save Cash Entry</button>
+                    <div class="col-12 text-end mt-4">
+                        <button class="btn btn-gradient shadow-glow rounded-pill px-4 shadow-sm hover-lift d-inline-flex align-items-center gap-2">
+                            <i data-lucide="save" class="w-4 h-4"></i> Save Entry
+                        </button>
                     </div>
                 </form>
 
-                <div class="fw-semibold mb-2">Count Cash</div>
-                <form method="post" class="row g-3 align-items-end">
+                <hr class="text-gray-300 my-4">
+
+                <div class="d-flex align-items-center gap-2 mb-4">
+                    <div class="bg-warning bg-opacity-10 p-2 rounded-3 text-warning">
+                        <i data-lucide="calculator" class="w-5 h-5"></i>
+                    </div>
+                    <h5 class="fw-bold mb-0 text-gray-800">Count Cash</h5>
+                </div>
+                
+                <form method="post" class="row g-3 align-items-end bg-light p-3 rounded-4 border-0">
                     <input type="hidden" name="action" value="count_cash">
                     <div class="col-12 col-md-4">
-                        <label class="form-label" for="count_date">Date</label>
-                        <input class="form-control" type="date" id="count_date" name="count_date" value="<?= h($date) ?>" required>
+                        <label class="form-label small fw-bold text-gray-600" for="count_date">Date</label>
+                        <input class="form-control border-0 shadow-sm" type="date" id="count_date" name="count_date" value="<?= h($date) ?>" required>
                     </div>
                     <div class="col-12 col-md-4">
-                        <label class="form-label" for="expected_cash">Expected Cash</label>
-                        <input class="form-control" type="text" id="expected_cash" value="<?= h(number_format($expectedCash, 2)) ?>" disabled>
+                        <label class="form-label small fw-bold text-gray-600" for="expected_cash">Expected Cash</label>
+                        <input class="form-control border-0 shadow-sm bg-white" type="text" id="expected_cash" value="<?= h(number_format($expectedCash, 2)) ?>" disabled>
                     </div>
                     <div class="col-12 col-md-4">
-                        <label class="form-label" for="actual_cash">Actual Cash</label>
-                        <input class="form-control" type="number" step="0.01" id="actual_cash" name="actual_cash" value="<?= h((string) ($todayCount['actual_cash'] ?? '')) ?>" required>
+                        <label class="form-label small fw-bold text-gray-600" for="actual_cash">Actual Cash</label>
+                        <input class="form-control border-0 shadow-sm border-warning" type="number" step="0.01" id="actual_cash" name="actual_cash" value="<?= h((string) ($todayCount['actual_cash'] ?? '')) ?>" required>
                     </div>
-                    <div class="col-12">
-                        <button class="btn btn-primary">Save Count</button>
+                    <div class="col-12 text-end mt-4">
+                        <button class="btn btn-warning text-dark rounded-pill px-4 shadow-sm hover-lift d-inline-flex align-items-center gap-2 fw-bold">
+                            <i data-lucide="check-circle-2" class="w-4 h-4"></i> Save Count
+                        </button>
                     </div>
                 </form>
 
@@ -474,20 +490,20 @@ require_once __DIR__ . '/../includes/sidebar.php';
                     <?php
                     $diff = (float) ($todayCount['difference'] ?? 0);
                     $diffLabel = $diff < 0 ? 'Shortage' : ($diff > 0 ? 'Excess' : 'Matched');
+                    $diffColor = $diff < 0 ? 'text-danger' : ($diff > 0 ? 'text-warning' : 'text-success');
                     ?>
-                    <hr>
-                    <div class="row g-3">
-                        <div class="col-12 col-md-4">
-                            <div class="text-muted small">Expected</div>
-                            <div class="fw-semibold"><?= h(number_format((float) $todayCount['expected_cash'], 2)) ?></div>
+                    <div class="row g-3 mt-3 bg-white border rounded-4 p-2 shadow-sm">
+                        <div class="col-12 col-md-4 text-center border-end">
+                            <div class="text-muted small text-uppercase tracking-wider mb-1">Expected</div>
+                            <div class="fw-bold fs-5 text-gray-800"><?= h(number_format((float) $todayCount['expected_cash'], 2)) ?></div>
                         </div>
-                        <div class="col-12 col-md-4">
-                            <div class="text-muted small">Actual</div>
-                            <div class="fw-semibold"><?= h(number_format((float) $todayCount['actual_cash'], 2)) ?></div>
+                        <div class="col-12 col-md-4 text-center border-end">
+                            <div class="text-muted small text-uppercase tracking-wider mb-1">Actual</div>
+                            <div class="fw-bold fs-5 text-primary"><?= h(number_format((float) $todayCount['actual_cash'], 2)) ?></div>
                         </div>
-                        <div class="col-12 col-md-4">
-                            <div class="text-muted small">Difference (<?= h($diffLabel) ?>)</div>
-                            <div class="fw-semibold"><?= h(number_format($diff, 2)) ?></div>
+                        <div class="col-12 col-md-4 text-center">
+                            <div class="text-muted small text-uppercase tracking-wider mb-1">Difference (<?= h($diffLabel) ?>)</div>
+                            <div class="fw-bold fs-5 <?= $diffColor ?>"><?= h(number_format($diff, 2)) ?></div>
                         </div>
                     </div>
                 <?php endif; ?>
@@ -496,32 +512,41 @@ require_once __DIR__ . '/../includes/sidebar.php';
     </div>
 </div>
 
-<div class="card border-0 shadow-sm">
+<div class="glass-card animate-slide-up stagger-3">
     <div class="card-body p-0">
         <div class="table-responsive">
-            <table class="table table-striped table-hover align-middle mb-0">
-                <thead class="table-light">
+            <table class="table table-hover align-middle mb-0 custom-table">
+                <thead class="bg-light bg-opacity-50">
                 <tr>
-                    <th>Date</th>
-                    <th class="text-end">Expected</th>
-                    <th class="text-end">Actual</th>
-                    <th class="text-end">Difference</th>
-                    <th>Created At</th>
+                    <th class="border-0 px-4 py-3 text-uppercase text-xs font-bold text-gray-500 tracking-wider">Date</th>
+                    <th class="border-0 px-4 py-3 text-uppercase text-xs font-bold text-gray-500 tracking-wider text-end">Expected</th>
+                    <th class="border-0 px-4 py-3 text-uppercase text-xs font-bold text-gray-500 tracking-wider text-end">Actual</th>
+                    <th class="border-0 px-4 py-3 text-uppercase text-xs font-bold text-gray-500 tracking-wider text-end">Difference</th>
+                    <th class="border-0 px-4 py-3 text-uppercase text-xs font-bold text-gray-500 tracking-wider">Created At</th>
                 </tr>
                 </thead>
-                <tbody>
+                <tbody class="border-top-0">
                 <?php foreach ($counts as $c): ?>
-                    <tr>
-                        <td><?= h((string) $c['count_date']) ?></td>
-                        <td class="text-end"><?= h(number_format((float) $c['expected_cash'], 2)) ?></td>
-                        <td class="text-end"><?= h(number_format((float) $c['actual_cash'], 2)) ?></td>
-                        <td class="text-end"><?= h(number_format((float) $c['difference'], 2)) ?></td>
-                        <td><?= h((string) $c['created_at']) ?></td>
+                    <?php 
+                    $diff = (float) $c['difference'];
+                    $diffColor = $diff < 0 ? 'text-danger' : ($diff > 0 ? 'text-warning' : 'text-success');
+                    ?>
+                    <tr class="transition-all hover-bg-light">
+                        <td class="px-4 py-3 font-medium text-gray-800"><?= h((string) $c['count_date']) ?></td>
+                        <td class="px-4 py-3 text-end text-gray-600"><?= h(number_format((float) $c['expected_cash'], 2)) ?></td>
+                        <td class="px-4 py-3 text-end font-medium text-primary"><?= h(number_format((float) $c['actual_cash'], 2)) ?></td>
+                        <td class="px-4 py-3 text-end fw-bold <?= $diffColor ?>"><?= h(number_format($diff, 2)) ?></td>
+                        <td class="px-4 py-3 text-muted small"><?= h((string) $c['created_at']) ?></td>
                     </tr>
                 <?php endforeach; ?>
                 <?php if (!$counts): ?>
                     <tr>
-                        <td colspan="5" class="text-center text-muted py-4">No cash counts yet.</td>
+                        <td colspan="5" class="text-center text-muted py-5">
+                            <div class="d-flex flex-column align-items-center justify-content-center">
+                                <i data-lucide="clock" class="w-8 h-8 text-gray-300 mb-2"></i>
+                                <p class="mb-0">No cash counts yet.</p>
+                            </div>
+                        </td>
                     </tr>
                 <?php endif; ?>
                 </tbody>

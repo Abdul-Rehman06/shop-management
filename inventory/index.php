@@ -22,7 +22,7 @@ require_once __DIR__ . '/../includes/sidebar.php';
 <div class="d-flex flex-wrap gap-2 align-items-center justify-content-between mb-3">
     <h1 class="h4 mb-0">Inventory</h1>
     <div class="d-flex flex-wrap gap-2">
-        <a class="btn btn-primary btn-sm" href="<?= h(app_url('inventory/add.php')) ?>">Add Product</a>
+        <a class="btn btn-gradient shadow-glow btn-sm" href="<?= h(app_url('inventory/add.php')) ?>">Add Product</a>
     </div>
 </div>
 

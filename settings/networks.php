@@ -173,7 +173,7 @@ require_once __DIR__ . '/../includes/sidebar.php';
                 <div class="text-muted small mt-1">Core networks (Jazz/Zong/Telenor/Ufone) cannot be renamed or deleted.</div>
             </div>
             <div class="col-12 col-md-4">
-                <button class="btn btn-primary w-100">Add</button>
+                <button class="btn btn-gradient shadow-glow w-100">Add</button>
             </div>
         </form>
     </div>

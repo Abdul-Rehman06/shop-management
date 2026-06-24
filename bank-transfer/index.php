@@ -66,7 +66,7 @@ require_once __DIR__ . '/../includes/sidebar.php';
         <a class="btn btn-secondary btn-sm" href="<?= h(app_url('bank-transfer/report.php')) ?>">Reports</a>
         <a class="btn btn-outline-secondary btn-sm" href="<?= h(app_url('bank-transfer/opening.php?account_id=' . $accountId)) ?>">Set Opening</a>
         <a class="btn btn-outline-primary btn-sm" href="<?= h(app_url('bank-transfer/receiving.php?account_id=' . $accountId)) ?>">Add Received</a>
-        <a class="btn btn-primary btn-sm" href="<?= h(app_url('bank-transfer/sending.php?account_id=' . $accountId)) ?>">Add Sent</a>
+        <a class="btn btn-gradient shadow-glow btn-sm" href="<?= h(app_url('bank-transfer/sending.php?account_id=' . $accountId)) ?>">Add Sent</a>
     </div>
 </div>
 

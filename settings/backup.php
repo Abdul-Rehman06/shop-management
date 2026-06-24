@@ -93,7 +93,7 @@ require_once __DIR__ . '/../includes/sidebar.php';
 <div class="card border-0 shadow-sm mb-3">
     <div class="card-body">
         <form method="post">
-            <button class="btn btn-primary" name="create_backup" value="1">Create Backup</button>
+            <button class="btn btn-gradient shadow-glow" name="create_backup" value="1">Create Backup</button>
         </form>
     </div>
 </div>

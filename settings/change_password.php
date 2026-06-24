@@ -89,7 +89,7 @@ require_once __DIR__ . '/../includes/sidebar.php';
             </div>
 
             <div class="mt-3">
-                <button class="btn btn-primary">Update Password</button>
+                <button class="btn btn-gradient shadow-glow">Update Password</button>
             </div>
         </form>
     </div>

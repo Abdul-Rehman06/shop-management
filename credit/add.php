@@ -75,21 +75,26 @@ require_once __DIR__ . '/../includes/sidebar.php';
 
 ?>
 
-<div class="d-flex align-items-center justify-content-between mb-3">
-    <h1 class="h4 mb-0">Add Credit Customer</h1>
-    <a class="btn btn-outline-secondary btn-sm" href="<?= h(app_url('credit/index.php')) ?>">Back</a>
+<div class="d-flex align-items-center justify-content-between mb-4 animate-slide-up">
+    <div>
+        <h1 class="h3 mb-1 text-gray-800 font-bold">Add Credit Customer</h1>
+        <div class="text-gray-500 text-sm">Create a new customer for advance balance</div>
+    </div>
+    <a class="btn btn-outline-secondary bg-white/60 border-0 shadow-sm hover-lift rounded-xl d-inline-flex align-items-center gap-2" href="<?= h(app_url('credit/index.php')) ?>">
+        <i data-lucide="arrow-left" class="w-4 h-4"></i> Back
+    </a>
 </div>
 
 <?php if ($error !== ''): ?>
-    <div class="alert alert-danger"><?= h($error) ?></div>
+    <div class="alert alert-danger border-0 shadow-sm animate-slide-up"><?= h($error) ?></div>
 <?php endif; ?>
 
-<div class="card border-0 shadow-sm">
-    <div class="card-body">
-        <form method="post" class="row g-3">
+<div class="glass-card animate-slide-up stagger-1 max-w-4xl">
+    <div class="card-body p-4 p-md-5">
+        <form method="post" class="row g-4">
             <div class="col-12">
-                <label class="form-label" for="saved_customer_select">Saved Customer</label>
-                <select class="form-select" id="saved_customer_select" name="customer_id">
+                <label class="form-label fw-semibold text-gray-700" for="saved_customer_select">Saved Customer</label>
+                <select class="form-select form-select-lg bg-light border-0 shadow-none focus-ring" id="saved_customer_select" name="customer_id">
                     <option value="0">-- Select --</option>
                     <?php foreach ($savedCustomers as $c): ?>
                         <option value="<?= (int) $c['id'] ?>" data-name="<?= h((string) $c['name']) ?>" data-phone="<?= h((string) $c['phone']) ?>">
@@ -97,20 +102,25 @@ require_once __DIR__ . '/../includes/sidebar.php';
                         </option>
                     <?php endforeach; ?>
                 </select>
-                <div class="mt-2">
-                    <a class="btn btn-outline-secondary btn-sm" href="<?= h(app_url('settings/customers.php')) ?>">Add / Manage Customers</a>
+                <div class="mt-2 text-end">
+                    <a class="text-primary text-decoration-none small fw-medium hover-lift d-inline-block" href="<?= h(app_url('settings/customers.php')) ?>">
+                            <i data-lucide="user-plus" class="w-4 h-4 inline-block mr-1"></i> Add / Manage Customers
+                        </a>
                 </div>
             </div>
             <div class="col-12 col-md-6">
-                <label class="form-label" for="name">Customer Name</label>
-                <input class="form-control" type="text" id="name" name="name" value="<?= h($name) ?>" required>
+                <label class="form-label fw-semibold text-gray-700" for="name">Customer Name <span class="text-danger">*</span></label>
+                <input class="form-control form-control-lg bg-light border-0 shadow-none focus-ring" type="text" id="name" name="name" value="<?= h($name) ?>" required placeholder="Enter customer name">
             </div>
             <div class="col-12 col-md-6">
-                <label class="form-label" for="phone">Phone</label>
-                <input class="form-control" type="text" id="phone" name="phone" value="<?= h($phone) ?>">
+                <label class="form-label fw-semibold text-gray-700" for="phone">Phone</label>
+                <input class="form-control form-control-lg bg-light border-0 shadow-none focus-ring" type="text" id="phone" name="phone" value="<?= h($phone) ?>" placeholder="e.g. 03001234567">
             </div>
-            <div class="col-12">
-                <button class="btn btn-primary">Save</button>
+            <div class="col-12 mt-5 d-flex gap-3">
+                <button class="btn btn-gradient shadow-glow btn-lg px-5 rounded-xl hover-lift d-inline-flex align-items-center gap-2">
+                    <i data-lucide="check" class="w-5 h-5"></i> Save Customer
+                </button>
+                <a class="btn btn-outline-secondary bg-white/60 border-0 shadow-sm btn-lg px-4 rounded-xl hover-lift text-muted" href="<?= h(app_url('credit/index.php')) ?>">Cancel</a>
             </div>
         </form>
     </div>

@@ -58,39 +58,41 @@ require_once __DIR__ . '/../includes/sidebar.php';
 
 ?>
 
-<div class="d-flex flex-wrap gap-2 align-items-center justify-content-between mb-3">
+<div class="d-flex flex-wrap gap-3 align-items-center justify-content-between mb-4 animate-slide-up">
     <div>
-        <h1 class="h4 mb-0">Bank / CDM Deposits</h1>
-        <div class="text-muted small">Deposit history</div>
+        <h1 class="h3 mb-1 text-gray-800 font-bold">Bank / CDM Deposits</h1>
+        <div class="text-gray-500 text-sm">Track physical cash deposits into bank accounts</div>
     </div>
     <div class="d-flex flex-wrap gap-2">
-        <a class="btn btn-primary btn-sm" href="<?= h(app_url('bank-deposits/add.php')) ?>">Add Deposit</a>
+        <a class="btn btn-gradient shadow-glow rounded-xl" href="<?= h(app_url('bank-deposits/add.php')) ?>">
+            <i class="bi bi-plus-lg"></i> Add Deposit
+        </a>
     </div>
 </div>
 
 <?php if ($success !== ''): ?>
-    <div class="alert alert-success"><?= h($success) ?></div>
+    <div class="alert alert-success border-0 shadow-sm animate-slide-up"><?= h($success) ?></div>
 <?php endif; ?>
 
 <?php if ($error !== ''): ?>
-    <div class="alert alert-danger"><?= h($error) ?></div>
+    <div class="alert alert-danger border-0 shadow-sm animate-slide-up"><?= h($error) ?></div>
 <?php endif; ?>
 
-<div class="card border-0 shadow-sm mb-3">
-    <div class="card-body">
+<div class="glass-card mb-4 animate-slide-up stagger-1">
+    <div class="card-body p-4">
         <form method="get" class="row g-3 align-items-end">
             <div class="col-12 col-md-3">
-                <label class="form-label" for="from">From</label>
-                <input class="form-control" type="date" id="from" name="from" value="<?= h($from) ?>" required>
+                <label class="form-label small fw-bold text-gray-600" for="from">From Date</label>
+                <input class="form-control bg-light border-0 shadow-sm" type="date" id="from" name="from" value="<?= h($from) ?>" required>
             </div>
             <div class="col-12 col-md-3">
-                <label class="form-label" for="to">To</label>
-                <input class="form-control" type="date" id="to" name="to" value="<?= h($to) ?>" required>
+                <label class="form-label small fw-bold text-gray-600" for="to">To Date</label>
+                <input class="form-control bg-light border-0 shadow-sm" type="date" id="to" name="to" value="<?= h($to) ?>" required>
             </div>
             <div class="col-12 col-md-4">
-                <label class="form-label" for="bank_account_id">Bank</label>
-                <select class="form-select" id="bank_account_id" name="bank_account_id">
-                    <option value="0">All</option>
+                <label class="form-label small fw-bold text-gray-600" for="bank_account_id">Bank Account</label>
+                <select class="form-select bg-light border-0 shadow-sm" id="bank_account_id" name="bank_account_id">
+                    <option value="0">All Banks</option>
                     <?php foreach ($banks as $b): ?>
                         <option value="<?= (int) $b['id'] ?>" <?= (int) $b['id'] === $bankAccountId ? 'selected' : '' ?>>
                             <?= h((string) $b['account_name']) ?>
@@ -99,40 +101,45 @@ require_once __DIR__ . '/../includes/sidebar.php';
                 </select>
             </div>
             <div class="col-12 col-md-2">
-                <button class="btn btn-primary w-100">Filter</button>
+                <button class="btn btn-gradient shadow-glow w-100 shadow-sm hover-lift d-inline-flex align-items-center justify-content-center gap-2">
+                    <i class="bi bi-funnel"></i> Filter
+                </button>
             </div>
         </form>
     </div>
 </div>
 
-<div class="row g-3 mb-3">
+<div class="row g-4 mb-4 animate-slide-up stagger-2">
     <div class="col-12 col-md-4">
-        <div class="card border-0 shadow-sm">
-            <div class="card-body">
-                <div class="text-muted small">Total Deposits</div>
-                <div class="h5 mb-0"><?= h(number_format($total, 2)) ?></div>
+        <div class="p-4 bg-light rounded-4 border-start border-primary border-4 h-100 transition-all hover-lift">
+            <div class="d-flex align-items-center justify-content-between mb-2">
+                <div class="text-muted small fw-bold text-uppercase tracking-wider">Total Deposits</div>
+                <div class="bg-primary bg-opacity-10 text-primary p-2 rounded-circle">
+                    <i class="bi bi-bank"></i>
+                </div>
             </div>
+            <div class="h3 mb-0 font-bold text-primary"><?= h(number_format($total, 2)) ?></div>
         </div>
     </div>
 </div>
 
-<div class="card border-0 shadow-sm">
+<div class="glass-card animate-slide-up stagger-3">
     <div class="card-body p-0">
         <div class="table-responsive">
-            <table class="table table-striped table-hover align-middle mb-0">
-                <thead class="table-light">
+            <table class="table table-hover align-middle mb-0 custom-table">
+                <thead class="bg-light bg-opacity-50">
                 <tr>
-                    <th>Date</th>
-                    <th>Bank</th>
-                    <th class="text-end">Amount</th>
-                    <th>Note</th>
-                    <th>Created At</th>
+                    <th class="border-0 px-4 py-3 text-uppercase text-xs font-bold text-gray-500 tracking-wider">Date</th>
+                    <th class="border-0 px-4 py-3 text-uppercase text-xs font-bold text-gray-500 tracking-wider">Bank</th>
+                    <th class="border-0 px-4 py-3 text-uppercase text-xs font-bold text-gray-500 tracking-wider text-end">Amount</th>
+                    <th class="border-0 px-4 py-3 text-uppercase text-xs font-bold text-gray-500 tracking-wider">Note</th>
+                    <th class="border-0 px-4 py-3 text-uppercase text-xs font-bold text-gray-500 tracking-wider">Created At</th>
                     <?php if ($canEditDelete): ?>
-                        <th class="text-end">Actions</th>
+                        <th class="border-0 px-4 py-3 text-uppercase text-xs font-bold text-gray-500 tracking-wider text-end">Actions</th>
                     <?php endif; ?>
                 </tr>
                 </thead>
-                <tbody>
+                <tbody class="border-top-0">
                 <?php foreach ($rows as $r): ?>
                     <?php
                     $bankLabel = (string) ($r['account_name'] ?? '');
@@ -140,14 +147,18 @@ require_once __DIR__ . '/../includes/sidebar.php';
                         $bankLabel = (string) ($r['bank_name'] ?? '');
                     }
                     ?>
-                    <tr>
-                        <td><?= h((string) $r['deposit_date']) ?></td>
-                        <td><?= h($bankLabel) ?></td>
-                        <td class="text-end fw-semibold"><?= h(number_format((float) $r['amount'], 2)) ?></td>
-                        <td><?= h((string) ($r['note'] ?? '')) ?></td>
-                        <td><?= h((string) $r['created_at']) ?></td>
+                    <tr class="transition-all hover-bg-light">
+                        <td class="px-4 py-3 font-medium text-gray-600"><?= h((string) $r['deposit_date']) ?></td>
+                        <td class="px-4 py-3">
+                            <span class="badge bg-primary bg-opacity-10 text-primary px-3 py-1 rounded-pill border border-primary border-opacity-25">
+                                <i class="bi bi-building me-1"></i> <?= h($bankLabel) ?>
+                            </span>
+                        </td>
+                        <td class="px-4 py-3 text-end font-bold text-success">+ <?= h(number_format((float) $r['amount'], 2)) ?></td>
+                        <td class="px-4 py-3 text-gray-600"><?= h((string) ($r['note'] ?? '')) ?></td>
+                        <td class="px-4 py-3 text-muted small"><?= h((string) $r['created_at']) ?></td>
                         <?php if ($canEditDelete): ?>
-                            <td class="text-end">
+                            <td class="px-4 py-3 text-end">
                                 <a class="btn btn-outline-danger btn-sm" href="<?= h(app_url('bank-deposits/delete.php?id=' . (int) $r['id'])) ?>">Delete</a>
                             </td>
                         <?php endif; ?>
@@ -155,7 +166,12 @@ require_once __DIR__ . '/../includes/sidebar.php';
                 <?php endforeach; ?>
                 <?php if (!$rows): ?>
                     <tr>
-                        <td colspan="<?= h((string) (5 + ($canEditDelete ? 1 : 0))) ?>" class="text-center text-muted py-4">No deposits found.</td>
+                        <td colspan="<?= h((string) (5 + ($canEditDelete ? 1 : 0))) ?>" class="text-center text-muted py-5">
+                            <div class="d-flex flex-column align-items-center justify-content-center">
+                                <i class="bi bi-bank fs-1 text-gray-300 mb-2"></i>
+                                <p class="mb-0">No deposits found.</p>
+                            </div>
+                        </td>
                     </tr>
                 <?php endif; ?>
                 </tbody>

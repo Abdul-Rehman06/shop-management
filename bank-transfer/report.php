@@ -115,7 +115,7 @@ require_once __DIR__ . '/../includes/sidebar.php';
                 </select>
             </div>
             <div class="col-12">
-                <button class="btn btn-primary">Filter</button>
+                <button class="btn btn-gradient shadow-glow">Filter</button>
             </div>
         </form>
     </div>

@@ -154,7 +154,7 @@ require_once __DIR__ . '/../includes/sidebar.php';
                 <input class="form-control" type="text" id="notes" name="notes" value="<?= h($notes) ?>">
             </div>
             <div class="col-12">
-                <button class="btn btn-primary">Save</button>
+                <button class="btn btn-gradient shadow-glow">Save</button>
             </div>
         </form>
     </div>

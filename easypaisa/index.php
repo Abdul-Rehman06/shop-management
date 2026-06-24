@@ -65,7 +65,7 @@ require_once __DIR__ . '/../includes/sidebar.php';
         <a class="btn btn-secondary btn-sm" href="<?= h(app_url('easypaisa/report.php')) ?>">Reports</a>
         <a class="btn btn-outline-secondary btn-sm" href="<?= h(app_url('easypaisa/opening.php?account_id=' . $accountId)) ?>">Set Opening</a>
         <a class="btn btn-outline-primary btn-sm" href="<?= h(app_url('easypaisa/receiving.php?account_id=' . $accountId)) ?>">Add Receiving</a>
-        <a class="btn btn-primary btn-sm" href="<?= h(app_url('easypaisa/sending.php?account_id=' . $accountId)) ?>">Add Sending</a>
+        <a class="btn btn-gradient shadow-glow btn-sm" href="<?= h(app_url('easypaisa/sending.php?account_id=' . $accountId)) ?>">Add Sending</a>
     </div>
 </div>
 
