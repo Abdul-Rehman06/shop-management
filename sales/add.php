@@ -11,9 +11,18 @@ $pdo = db();
 $canViewProfit = app_can_view_profit();
 $products = sales_products($pdo);
 
+$creditCustomers = [];
+try {
+    $stmt = $pdo->query("SELECT id, name, phone FROM credit_customers WHERE status = 'active' ORDER BY name ASC, id ASC");
+    $creditCustomers = $stmt->fetchAll();
+} catch (Throwable $e) {
+}
+
 $productId = (int) ($_POST['product_id'] ?? ($products[0]['id'] ?? 0));
 $quantity = (string) ($_POST['quantity'] ?? '1');
 $salePrice = (string) ($_POST['sale_price'] ?? '');
+$creditCustomerId = (int) ($_POST['credit_customer_id'] ?? 0);
+$creditUseAmount = (string) ($_POST['credit_use_amount'] ?? '');
 $error = '';
 
 $productsMap = [];
@@ -25,6 +34,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $productId = (int) ($_POST['product_id'] ?? 0);
     $quantity = trim((string) ($_POST['quantity'] ?? ''));
     $salePrice = trim((string) ($_POST['sale_price'] ?? ''));
+    $creditCustomerId = (int) ($_POST['credit_customer_id'] ?? 0);
+    $creditUseAmount = trim((string) ($_POST['credit_use_amount'] ?? ''));
 
     if ($productId <= 0 || !isset($productsMap[$productId])) {
         $error = 'Please select a product.';
@@ -32,6 +43,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $error = 'Quantity must be a positive whole number.';
     } elseif ($salePrice === '' || !is_numeric($salePrice)) {
         $error = 'Sale price must be a number.';
+    } elseif ($creditCustomerId > 0 && ($creditUseAmount === '' || !is_numeric($creditUseAmount) || (float) $creditUseAmount <= 0)) {
+        $error = 'Credit used amount must be a positive number.';
     } else {
         $product = $productsMap[$productId];
         $purchase = (float) $product['purchase_price'];
@@ -39,19 +52,60 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $qty = (int) $quantity;
         $profit = sales_profit_total($purchase, $sale, $qty);
 
-        $stmt = $pdo->prepare('
-            INSERT INTO sales (product_id, quantity, sale_price, profit)
-            VALUES (:product_id, :quantity, :sale_price, :profit)
-        ');
-        $stmt->execute([
-            ':product_id' => $productId,
-            ':quantity' => $qty,
-            ':sale_price' => $sale,
-            ':profit' => $profit,
-        ]);
+        if ($creditCustomerId > 0) {
+            $stmt = $pdo->prepare("
+                SELECT
+                    COALESCE(SUM(CASE WHEN txn_type='advance' THEN amount ELSE 0 END), 0) AS adv_total,
+                    COALESCE(SUM(CASE WHEN txn_type='used' THEN amount ELSE 0 END), 0) AS used_total
+                FROM credit_transactions
+                WHERE customer_id = :id
+            ");
+            $stmt->execute([':id' => $creditCustomerId]);
+            $row = $stmt->fetch() ?: [];
+            $remaining = (float) ($row['adv_total'] ?? 0) - (float) ($row['used_total'] ?? 0);
+            if ((float) $creditUseAmount > $remaining) {
+                $error = 'Credit used amount exceeds remaining credit.';
+            }
+        }
 
-        flash_set('success', 'Sale added successfully.');
-        app_redirect('sales/index.php');
+        if ($error === '') {
+            $pdo->beginTransaction();
+            try {
+                $stmt = $pdo->prepare('
+                    INSERT INTO sales (product_id, quantity, sale_price, profit)
+                    VALUES (:product_id, :quantity, :sale_price, :profit)
+                ');
+                $stmt->execute([
+                    ':product_id' => $productId,
+                    ':quantity' => $qty,
+                    ':sale_price' => $sale,
+                    ':profit' => $profit,
+                ]);
+                $saleId = (int) $pdo->lastInsertId();
+
+                if ($creditCustomerId > 0) {
+                    $stmt = $pdo->prepare("
+                        INSERT INTO credit_transactions (customer_id, txn_date, txn_type, amount, notes)
+                        VALUES (:customer_id, :txn_date, 'used', :amount, :notes)
+                    ");
+                    $stmt->execute([
+                        ':customer_id' => $creditCustomerId,
+                        ':txn_date' => date('Y-m-d'),
+                        ':amount' => (float) $creditUseAmount,
+                        ':notes' => 'Used for Sale #' . $saleId,
+                    ]);
+                }
+
+                $pdo->commit();
+                flash_set('success', 'Sale added successfully.');
+                app_redirect('sales/index.php');
+            } catch (Throwable $e) {
+                if ($pdo->inTransaction()) {
+                    $pdo->rollBack();
+                }
+                $error = 'Could not save sale.';
+            }
+        }
     }
 }
 
@@ -120,6 +174,22 @@ require_once __DIR__ . '/../includes/sidebar.php';
                     <div class="col-12 col-md-3">
                         <label class="form-label" for="sale_price">Sale Price</label>
                         <input class="form-control" type="number" step="0.01" id="sale_price" name="sale_price" value="<?= h($salePrice) ?>" required>
+                    </div>
+
+                    <div class="col-12 col-md-6">
+                        <label class="form-label" for="credit_customer_id">Use Customer Credit (Optional)</label>
+                        <select class="form-select" id="credit_customer_id" name="credit_customer_id">
+                            <option value="0">-- No Credit --</option>
+                            <?php foreach ($creditCustomers as $c): ?>
+                                <option value="<?= (int) $c['id'] ?>" <?= (int) $c['id'] === $creditCustomerId ? 'selected' : '' ?>>
+                                    <?= h((string) $c['name']) ?><?= ($c['phone'] ?? '') !== '' ? (' • ' . h((string) $c['phone'])) : '' ?>
+                                </option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+                    <div class="col-12 col-md-3">
+                        <label class="form-label" for="credit_use_amount">Credit Used Amount</label>
+                        <input class="form-control" type="number" step="0.01" id="credit_use_amount" name="credit_use_amount" value="<?= h($creditUseAmount) ?>" placeholder="0.00">
                     </div>
 
                     <?php if ($canViewProfit): ?>

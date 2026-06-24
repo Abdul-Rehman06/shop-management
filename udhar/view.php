@@ -8,37 +8,97 @@ $pageTitle = 'Udhar Details - Shop Management';
 
 $pdo = db();
 
-$pdo->exec("
-    CREATE TABLE IF NOT EXISTS udhar_customers (
-        id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-        name VARCHAR(120) NOT NULL,
-        phone VARCHAR(30) NULL,
-        amount DECIMAL(12,2) NOT NULL DEFAULT 0.00,
-        udhar_date DATE NOT NULL,
-        notes VARCHAR(255) NULL,
-        status ENUM('pending','cleared') NOT NULL DEFAULT 'pending',
-        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-        PRIMARY KEY (id),
-        KEY idx_udhar_status (status),
-        KEY idx_udhar_date (udhar_date),
-        KEY idx_udhar_phone (phone)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-");
+function udhar_ensure_ledger(PDO $pdo, int $udharId): void
+{
+    if ($udharId <= 0) {
+        return;
+    }
 
-$pdo->exec("
-    CREATE TABLE IF NOT EXISTS udhar_payments (
-        id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-        udhar_id BIGINT UNSIGNED NOT NULL,
-        amount DECIMAL(12,2) NOT NULL DEFAULT 0.00,
-        payment_date DATE NOT NULL,
-        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        PRIMARY KEY (id),
-        KEY idx_udhar_payments_udhar_id (udhar_id),
-        KEY idx_udhar_payments_date (payment_date),
-        CONSTRAINT fk_udhar_payments_udhar_id FOREIGN KEY (udhar_id) REFERENCES udhar_customers (id) ON UPDATE CASCADE ON DELETE CASCADE
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-");
+    try {
+        $stmt = $pdo->prepare('SELECT COUNT(*) FROM udhar_transactions WHERE udhar_id = :id');
+        $stmt->execute([':id' => $udharId]);
+        $cnt = (int) $stmt->fetchColumn();
+        if ($cnt > 0) {
+            return;
+        }
+
+        $stmt = $pdo->prepare('SELECT amount, udhar_date, notes FROM udhar_customers WHERE id = :id LIMIT 1');
+        $stmt->execute([':id' => $udharId]);
+        $row = $stmt->fetch();
+        if ($row) {
+            $amount = (float) ($row['amount'] ?? 0);
+            $date = (string) ($row['udhar_date'] ?? '');
+            $notes = (string) ($row['notes'] ?? '');
+            if ($amount > 0 && $date !== '') {
+                $ins = $pdo->prepare("
+                    INSERT INTO udhar_transactions (udhar_id, txn_date, txn_type, amount, notes)
+                    VALUES (:udhar_id, :txn_date, 'udhar', :amount, :notes)
+                ");
+                $ins->execute([
+                    ':udhar_id' => $udharId,
+                    ':txn_date' => $date,
+                    ':amount' => $amount,
+                    ':notes' => $notes !== '' ? $notes : null,
+                ]);
+            }
+        }
+
+        try {
+            $stmt = $pdo->prepare('SELECT payment_date, amount, created_at FROM udhar_payments WHERE udhar_id = :id ORDER BY payment_date ASC, id ASC');
+            $stmt->execute([':id' => $udharId]);
+            $payments = $stmt->fetchAll();
+            if ($payments) {
+                $ins = $pdo->prepare("
+                    INSERT INTO udhar_transactions (udhar_id, txn_date, txn_type, amount, notes, created_at)
+                    VALUES (:udhar_id, :txn_date, 'payment', :amount, NULL, :created_at)
+                ");
+                foreach ($payments as $p) {
+                    $pDate = (string) ($p['payment_date'] ?? '');
+                    $pAmount = (float) ($p['amount'] ?? 0);
+                    $createdAt = (string) ($p['created_at'] ?? '');
+                    if ($pDate !== '' && $pAmount > 0) {
+                        $ins->execute([
+                            ':udhar_id' => $udharId,
+                            ':txn_date' => $pDate,
+                            ':amount' => $pAmount,
+                            ':created_at' => $createdAt !== '' ? $createdAt : date('Y-m-d H:i:s'),
+                        ]);
+                    }
+                }
+            }
+        } catch (Throwable $e) {
+        }
+    } catch (Throwable $e) {
+    }
+}
+
+function udhar_totals(PDO $pdo, int $udharId): array
+{
+    $stmt = $pdo->prepare("
+        SELECT
+            COALESCE(SUM(CASE WHEN txn_type = 'udhar' THEN amount ELSE 0 END), 0) AS udhar_total,
+            COALESCE(SUM(CASE WHEN txn_type = 'payment' THEN amount ELSE 0 END), 0) AS paid_total
+        FROM udhar_transactions
+        WHERE udhar_id = :id
+    ");
+    $stmt->execute([':id' => $udharId]);
+    $row = $stmt->fetch() ?: [];
+    $udharTotal = (float) ($row['udhar_total'] ?? 0);
+    $paidTotal = (float) ($row['paid_total'] ?? 0);
+    $balance = $udharTotal - $paidTotal;
+    return [$udharTotal, $paidTotal, $balance];
+}
+
+function udhar_update_status(PDO $pdo, int $udharId): void
+{
+    try {
+        [, , $balance] = udhar_totals($pdo, $udharId);
+        $status = $balance <= 0 ? 'cleared' : 'pending';
+        $stmt = $pdo->prepare('UPDATE udhar_customers SET status = :status WHERE id = :id');
+        $stmt->execute([':status' => $status, ':id' => $udharId]);
+    } catch (Throwable $e) {
+    }
+}
 
 $id = (int) ($_GET['id'] ?? 0);
 if ($id <= 0) {
@@ -49,47 +109,43 @@ if ($id <= 0) {
 $success = flash_get('success');
 $error = flash_get('error');
 
+udhar_ensure_ledger($pdo, $id);
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = (string) ($_POST['action'] ?? '');
-    if ($action === 'add_payment') {
-        $paymentDate = trim((string) ($_POST['payment_date'] ?? date('Y-m-d')));
-        $payAmount = trim((string) ($_POST['amount'] ?? ''));
+    if ($action === 'add_txn') {
+        $txnDate = trim((string) ($_POST['txn_date'] ?? date('Y-m-d')));
+        $txnType = trim((string) ($_POST['txn_type'] ?? ''));
+        $amount = trim((string) ($_POST['amount'] ?? ''));
+        $notes = trim((string) ($_POST['notes'] ?? ''));
 
-        if ($paymentDate === '') {
-            flash_set('error', 'Payment date is required.');
+        if ($txnDate === '') {
+            flash_set('error', 'Date is required.');
             app_redirect('udhar/view.php?id=' . $id);
         }
-        if ($payAmount === '' || !is_numeric($payAmount) || (float) $payAmount <= 0) {
-            flash_set('error', 'Payment amount must be a positive number.');
+        if ($txnType !== 'udhar' && $txnType !== 'payment') {
+            flash_set('error', 'Invalid transaction type.');
+            app_redirect('udhar/view.php?id=' . $id);
+        }
+        if ($amount === '' || !is_numeric($amount) || (float) $amount <= 0) {
+            flash_set('error', 'Amount must be a positive number.');
             app_redirect('udhar/view.php?id=' . $id);
         }
 
         $stmt = $pdo->prepare("
-            INSERT INTO udhar_payments (udhar_id, amount, payment_date)
-            VALUES (:udhar_id, :amount, :payment_date)
+            INSERT INTO udhar_transactions (udhar_id, txn_date, txn_type, amount, notes)
+            VALUES (:udhar_id, :txn_date, :txn_type, :amount, :notes)
         ");
         $stmt->execute([
             ':udhar_id' => $id,
-            ':amount' => (float) $payAmount,
-            ':payment_date' => $paymentDate,
+            ':txn_date' => $txnDate,
+            ':txn_type' => $txnType,
+            ':amount' => (float) $amount,
+            ':notes' => $notes !== '' ? $notes : null,
         ]);
 
-        $pdo->exec("
-            UPDATE udhar_customers c
-            LEFT JOIN (
-                SELECT udhar_id, COALESCE(SUM(amount), 0) AS paid_total
-                FROM udhar_payments
-                WHERE udhar_id = " . (int) $id . "
-                GROUP BY udhar_id
-            ) p ON p.udhar_id = c.id
-            SET c.status = CASE
-                WHEN (c.amount - COALESCE(p.paid_total, 0)) <= 0 THEN 'cleared'
-                ELSE 'pending'
-            END
-            WHERE c.id = " . (int) $id . "
-        ");
-
-        flash_set('success', 'Payment saved.');
+        udhar_update_status($pdo, $id);
+        flash_set('success', $txnType === 'udhar' ? 'Udhar entry saved.' : 'Payment saved.');
         app_redirect('udhar/view.php?id=' . $id);
     }
 }
@@ -102,27 +158,27 @@ if (!$customer) {
     app_redirect('udhar/index.php');
 }
 
-$stmt = $pdo->prepare("
-    SELECT id, amount, payment_date, created_at
-    FROM udhar_payments
-    WHERE udhar_id = :id
-    ORDER BY payment_date DESC, id DESC
-");
-$stmt->execute([':id' => $id]);
-$payments = $stmt->fetchAll();
-
-$paidTotal = 0.0;
-foreach ($payments as $p) {
-    $paidTotal += (float) ($p['amount'] ?? 0);
-}
-$total = (float) ($customer['amount'] ?? 0);
-$remaining = $total - $paidTotal;
+udhar_ensure_ledger($pdo, $id);
+[$udharTotal, $paidTotal, $balance] = udhar_totals($pdo, $id);
+$remaining = $balance;
 if ($remaining < 0) {
     $remaining = 0.0;
 }
+$status = $balance <= 0 ? 'cleared' : 'pending';
 
-$payDate = date('Y-m-d');
-$payAmount = '';
+$stmt = $pdo->prepare("
+    SELECT id, txn_date, txn_type, amount, notes, created_at
+    FROM udhar_transactions
+    WHERE udhar_id = :id
+    ORDER BY txn_date DESC, id DESC
+");
+$stmt->execute([':id' => $id]);
+$txns = $stmt->fetchAll();
+
+$txnDate = date('Y-m-d');
+$txnType = 'payment';
+$txnAmount = '';
+$txnNotes = '';
 
 require_once __DIR__ . '/../includes/header.php';
 require_once __DIR__ . '/../includes/sidebar.php';
@@ -153,7 +209,7 @@ require_once __DIR__ . '/../includes/sidebar.php';
         <div class="card border-0 shadow-sm">
             <div class="card-body">
                 <div class="text-muted small">Total Udhar</div>
-                <div class="h5 mb-0"><?= h(number_format($total, 2)) ?></div>
+                <div class="h5 mb-0"><?= h(number_format($udharTotal, 2)) ?></div>
             </div>
         </div>
     </div>
@@ -178,7 +234,7 @@ require_once __DIR__ . '/../includes/sidebar.php';
             <div class="card-body">
                 <div class="text-muted small">Status</div>
                 <div class="h5 mb-0">
-                    <?php if (($customer['status'] ?? '') === 'cleared'): ?>
+                    <?php if ($status === 'cleared'): ?>
                         <span class="badge text-bg-success">Cleared</span>
                     <?php else: ?>
                         <span class="badge text-bg-warning">Pending</span>
@@ -206,19 +262,30 @@ require_once __DIR__ . '/../includes/sidebar.php';
 
 <div class="card border-0 shadow-sm mb-3">
     <div class="card-body">
-        <h2 class="h6 fw-bold mb-3">Add Payment</h2>
+        <h2 class="h6 fw-bold mb-3">Add Transaction</h2>
         <form method="post" class="row g-3 align-items-end">
-            <input type="hidden" name="action" value="add_payment">
+            <input type="hidden" name="action" value="add_txn">
             <div class="col-12 col-md-3">
-                <label class="form-label" for="payment_date">Date</label>
-                <input class="form-control" type="date" id="payment_date" name="payment_date" value="<?= h($payDate) ?>" required>
+                <label class="form-label" for="txn_date">Date</label>
+                <input class="form-control" type="date" id="txn_date" name="txn_date" value="<?= h($txnDate) ?>" required>
+            </div>
+            <div class="col-12 col-md-3">
+                <label class="form-label" for="txn_type">Type</label>
+                <select class="form-select" id="txn_type" name="txn_type" required>
+                    <option value="udhar" <?= $txnType === 'udhar' ? 'selected' : '' ?>>+ Udhar</option>
+                    <option value="payment" <?= $txnType === 'payment' ? 'selected' : '' ?>>- Payment</option>
+                </select>
             </div>
             <div class="col-12 col-md-3">
                 <label class="form-label" for="amount">Amount</label>
-                <input class="form-control" type="number" step="0.01" id="amount" name="amount" value="<?= h($payAmount) ?>" required>
+                <input class="form-control" type="number" step="0.01" id="amount" name="amount" value="<?= h($txnAmount) ?>" required>
+            </div>
+            <div class="col-12 col-md-6">
+                <label class="form-label" for="notes">Notes</label>
+                <input class="form-control" type="text" id="notes" name="notes" value="<?= h($txnNotes) ?>">
             </div>
             <div class="col-12 col-md-3">
-                <button class="btn btn-primary w-100">Save Payment</button>
+                <button class="btn btn-primary w-100">Save</button>
             </div>
         </form>
     </div>
@@ -231,21 +298,40 @@ require_once __DIR__ . '/../includes/sidebar.php';
                 <thead class="table-light">
                 <tr>
                     <th>Date</th>
+                    <th>Type</th>
                     <th class="text-end">Amount</th>
+                    <th>Notes</th>
                     <th>Created At</th>
+                    <?php if (app_can_edit_delete_records()): ?>
+                        <th class="text-end">Actions</th>
+                    <?php endif; ?>
                 </tr>
                 </thead>
                 <tbody>
-                <?php foreach ($payments as $p): ?>
+                <?php foreach ($txns as $t): ?>
                     <tr>
-                        <td><?= h((string) $p['payment_date']) ?></td>
-                        <td class="text-end"><?= h(number_format((float) $p['amount'], 2)) ?></td>
-                        <td><?= h((string) $p['created_at']) ?></td>
+                        <td><?= h((string) $t['txn_date']) ?></td>
+                        <td>
+                            <?php if (($t['txn_type'] ?? '') === 'udhar'): ?>
+                                <span class="badge text-bg-warning">+ Udhar</span>
+                            <?php else: ?>
+                                <span class="badge text-bg-success">- Payment</span>
+                            <?php endif; ?>
+                        </td>
+                        <td class="text-end"><?= h(number_format((float) $t['amount'], 2)) ?></td>
+                        <td><?= h((string) ($t['notes'] ?? '')) ?></td>
+                        <td><?= h((string) $t['created_at']) ?></td>
+                        <?php if (app_can_edit_delete_records()): ?>
+                            <td class="text-end">
+                                <a class="btn btn-outline-secondary btn-sm" href="<?= h(app_url('udhar/edit_txn.php?id=' . (int) $t['id'] . '&udhar_id=' . $id)) ?>">Edit</a>
+                                <a class="btn btn-outline-danger btn-sm" href="<?= h(app_url('udhar/delete_txn.php?id=' . (int) $t['id'] . '&udhar_id=' . $id)) ?>">Delete</a>
+                            </td>
+                        <?php endif; ?>
                     </tr>
                 <?php endforeach; ?>
-                <?php if (!$payments): ?>
+                <?php if (!$txns): ?>
                     <tr>
-                        <td colspan="3" class="text-center text-muted py-4">No payments yet.</td>
+                        <td colspan="<?= h((string) (5 + (app_can_edit_delete_records() ? 1 : 0))) ?>" class="text-center text-muted py-4">No transactions yet.</td>
                     </tr>
                 <?php endif; ?>
                 </tbody>
@@ -255,4 +341,3 @@ require_once __DIR__ . '/../includes/sidebar.php';
 </div>
 
 <?php require_once __DIR__ . '/../includes/footer.php'; ?>
-

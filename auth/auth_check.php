@@ -126,6 +126,33 @@ function app_require_edit_delete_access(): void
     exit;
 }
 
+function app_audit_log(string $entityType, int $entityId, string $action, ?array $before, ?array $after): void
+{
+    try {
+        $pdo = db();
+        $admin = app_current_admin();
+        $adminId = (int) ($admin['id'] ?? 0);
+        $ip = (string) ($_SERVER['REMOTE_ADDR'] ?? '');
+        $userAgent = (string) ($_SERVER['HTTP_USER_AGENT'] ?? '');
+
+        $stmt = $pdo->prepare("
+            INSERT INTO audit_logs (admin_id, entity_type, entity_id, action, before_json, after_json, ip_address, user_agent)
+            VALUES (:admin_id, :entity_type, :entity_id, :action, :before_json, :after_json, :ip_address, :user_agent)
+        ");
+        $stmt->execute([
+            ':admin_id' => $adminId > 0 ? $adminId : null,
+            ':entity_type' => $entityType,
+            ':entity_id' => $entityId,
+            ':action' => $action,
+            ':before_json' => $before ? json_encode($before, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) : null,
+            ':after_json' => $after ? json_encode($after, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) : null,
+            ':ip_address' => $ip !== '' ? $ip : null,
+            ':user_agent' => $userAgent !== '' ? $userAgent : null,
+        ]);
+    } catch (Throwable $e) {
+    }
+}
+
 function app_require_stock_access(): void
 {
     if (app_can_manage_stock()) {
@@ -149,6 +176,197 @@ function app_ensure_schema(PDO $pdo): void
         if (!$hasRole) {
             $pdo->exec("ALTER TABLE admins ADD COLUMN role ENUM('owner','staff') NOT NULL DEFAULT 'owner'");
         }
+    } catch (Throwable $e) {
+    }
+
+    try {
+        $pdo->exec("
+            CREATE TABLE IF NOT EXISTS audit_logs (
+                id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+                admin_id INT UNSIGNED NULL,
+                entity_type VARCHAR(50) NOT NULL,
+                entity_id BIGINT UNSIGNED NOT NULL,
+                action ENUM('edit','delete') NOT NULL,
+                before_json LONGTEXT NULL,
+                after_json LONGTEXT NULL,
+                ip_address VARCHAR(45) NULL,
+                user_agent VARCHAR(255) NULL,
+                created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (id),
+                KEY idx_audit_admin (admin_id),
+                KEY idx_audit_entity (entity_type, entity_id),
+                KEY idx_audit_created_at (created_at),
+                CONSTRAINT fk_audit_admin_id FOREIGN KEY (admin_id) REFERENCES admins(id) ON UPDATE CASCADE ON DELETE SET NULL
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        ");
+    } catch (Throwable $e) {
+    }
+
+    try {
+        $pdo->exec("
+            CREATE TABLE IF NOT EXISTS admin_login_logs (
+                id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+                admin_id INT UNSIGNED NOT NULL,
+                logged_in_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                ip_address VARCHAR(45) NULL,
+                user_agent VARCHAR(255) NULL,
+                PRIMARY KEY (id),
+                KEY idx_login_admin (admin_id),
+                KEY idx_login_time (logged_in_at),
+                CONSTRAINT fk_admin_login_logs_admin FOREIGN KEY (admin_id) REFERENCES admins(id) ON UPDATE CASCADE ON DELETE CASCADE
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        ");
+    } catch (Throwable $e) {
+    }
+
+    try {
+        $pdo->exec("
+            CREATE TABLE IF NOT EXISTS credit_customers (
+                id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+                name VARCHAR(120) NOT NULL,
+                phone VARCHAR(30) NULL,
+                status ENUM('active','inactive') NOT NULL DEFAULT 'active',
+                created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                PRIMARY KEY (id),
+                KEY idx_credit_customers_status (status),
+                KEY idx_credit_customers_phone (phone)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        ");
+    } catch (Throwable $e) {
+    }
+
+    try {
+        $pdo->exec("
+            CREATE TABLE IF NOT EXISTS credit_transactions (
+                id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+                customer_id BIGINT UNSIGNED NOT NULL,
+                txn_date DATE NOT NULL,
+                txn_type ENUM('advance','used') NOT NULL,
+                amount DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+                notes VARCHAR(255) NULL,
+                created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (id),
+                KEY idx_credit_txn_customer (customer_id),
+                KEY idx_credit_txn_date (txn_date),
+                KEY idx_credit_txn_type (txn_type),
+                CONSTRAINT fk_credit_txn_customer FOREIGN KEY (customer_id) REFERENCES credit_customers(id) ON UPDATE CASCADE ON DELETE CASCADE
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        ");
+    } catch (Throwable $e) {
+    }
+
+    try {
+        $pdo->exec("
+            CREATE TABLE IF NOT EXISTS udhar_customers (
+                id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+                name VARCHAR(120) NOT NULL,
+                phone VARCHAR(30) NULL,
+                amount DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+                udhar_date DATE NOT NULL,
+                notes VARCHAR(255) NULL,
+                status ENUM('pending','cleared') NOT NULL DEFAULT 'pending',
+                created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                PRIMARY KEY (id),
+                KEY idx_udhar_status (status),
+                KEY idx_udhar_date (udhar_date),
+                KEY idx_udhar_phone (phone)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        ");
+    } catch (Throwable $e) {
+    }
+
+    try {
+        $pdo->exec("
+            CREATE TABLE IF NOT EXISTS udhar_transactions (
+                id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+                udhar_id BIGINT UNSIGNED NOT NULL,
+                txn_date DATE NOT NULL,
+                txn_type ENUM('udhar','payment') NOT NULL,
+                amount DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+                notes VARCHAR(255) NULL,
+                created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (id),
+                KEY idx_udhar_txn_udhar_id (udhar_id),
+                KEY idx_udhar_txn_date (txn_date),
+                KEY idx_udhar_txn_type (txn_type),
+                CONSTRAINT fk_udhar_txn_udhar_id FOREIGN KEY (udhar_id) REFERENCES udhar_customers(id) ON UPDATE CASCADE ON DELETE CASCADE
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        ");
+    } catch (Throwable $e) {
+    }
+
+    try {
+        $pdo->exec("
+            CREATE TABLE IF NOT EXISTS dealer_payments (
+                id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+                dealer_name VARCHAR(80) NOT NULL,
+                network ENUM('Jazz','Zong','Telenor','Ufone') NOT NULL,
+                payment_date DATE NOT NULL,
+                amount DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+                notes VARCHAR(255) NULL,
+                created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (id),
+                KEY idx_dealer_payments_date (payment_date),
+                KEY idx_dealer_payments_network (network),
+                KEY idx_dealer_payments_dealer (dealer_name)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        ");
+    } catch (Throwable $e) {
+    }
+
+    try {
+        $pdo->exec("
+            CREATE TABLE IF NOT EXISTS dealers (
+                id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+                dealer_name VARCHAR(80) NOT NULL,
+                network ENUM('Jazz','Zong','Telenor','Ufone') NOT NULL,
+                status ENUM('active','inactive') NOT NULL DEFAULT 'active',
+                created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                PRIMARY KEY (id),
+                UNIQUE KEY uq_dealers_dealer_name (dealer_name),
+                KEY idx_dealers_network (network),
+                KEY idx_dealers_status (status)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        ");
+    } catch (Throwable $e) {
+    }
+
+    try {
+        $stmt = $pdo->prepare("
+            INSERT IGNORE INTO dealers (dealer_name, network, status)
+            VALUES (:dealer_name, :network, 'active')
+        ");
+        $defaults = [
+            ['dealer_name' => 'Khalid', 'network' => 'Jazz'],
+            ['dealer_name' => 'Nouman', 'network' => 'Ufone'],
+            ['dealer_name' => 'Saifullah', 'network' => 'Telenor'],
+            ['dealer_name' => 'Imran', 'network' => 'Zong'],
+        ];
+        foreach ($defaults as $d) {
+            $stmt->execute([':dealer_name' => $d['dealer_name'], ':network' => $d['network']]);
+        }
+    } catch (Throwable $e) {
+    }
+
+    try {
+        $pdo->exec("
+            CREATE TABLE IF NOT EXISTS cash_counts (
+                id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+                count_date DATE NOT NULL,
+                expected_cash DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+                actual_cash DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+                difference DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+                created_by INT UNSIGNED NULL,
+                created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (id),
+                UNIQUE KEY uq_cash_counts_date (count_date),
+                KEY idx_cash_counts_date (count_date),
+                CONSTRAINT fk_cash_counts_created_by FOREIGN KEY (created_by) REFERENCES admins(id) ON UPDATE CASCADE ON DELETE SET NULL
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        ");
     } catch (Throwable $e) {
     }
 
@@ -212,6 +430,47 @@ function app_ensure_schema(PDO $pdo): void
                 KEY idx_sales_exchanges_date (exchange_date),
                 CONSTRAINT fk_sales_exchanges_return_id FOREIGN KEY (return_id) REFERENCES sales_returns(id) ON UPDATE CASCADE ON DELETE CASCADE,
                 CONSTRAINT fk_sales_exchanges_new_sale_id FOREIGN KEY (new_sale_id) REFERENCES sales(id) ON UPDATE CASCADE ON DELETE CASCADE
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        ");
+    } catch (Throwable $e) {
+    }
+
+    try {
+        $pdo->exec("
+            CREATE TABLE IF NOT EXISTS customers (
+                id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+                name VARCHAR(120) NOT NULL,
+                phone VARCHAR(30) NOT NULL,
+                created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                PRIMARY KEY (id),
+                UNIQUE KEY uq_customers_phone (phone),
+                KEY idx_customers_name (name)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        ");
+    } catch (Throwable $e) {
+    }
+
+    try {
+        $pdo->exec("
+            CREATE TABLE IF NOT EXISTS load_customer_transactions (
+                id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+                txn_date DATE NOT NULL,
+                network VARCHAR(50) NOT NULL,
+                customer_id BIGINT UNSIGNED NULL,
+                customer_name VARCHAR(120) NULL,
+                customer_phone VARCHAR(30) NULL,
+                amount DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+                profit DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+                notes VARCHAR(255) NULL,
+                created_by INT UNSIGNED NULL,
+                created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (id),
+                KEY idx_lct_date (txn_date),
+                KEY idx_lct_network (network),
+                KEY idx_lct_customer (customer_id),
+                CONSTRAINT fk_lct_customer FOREIGN KEY (customer_id) REFERENCES customers(id) ON UPDATE CASCADE ON DELETE SET NULL,
+                CONSTRAINT fk_lct_created_by FOREIGN KEY (created_by) REFERENCES admins(id) ON UPDATE CASCADE ON DELETE SET NULL
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
         ");
     } catch (Throwable $e) {

@@ -105,6 +105,9 @@ require_once __DIR__ . '/../includes/sidebar.php';
         <p class="text-gray-500 text-sm mb-0">Daily totals per network (no customer-wise entries)</p>
     </div>
     <div class="d-flex flex-wrap gap-2">
+        <a class="btn btn-outline-primary btn-sm" href="<?= h(app_url('load-management/transactions.php')) ?>">
+            <i data-lucide="list" class="w-4 h-4"></i> Load Transactions
+        </a>
         <?php if ($canViewProfit): ?>
             <a class="btn btn-secondary btn-sm" href="<?= h(app_url('load-management/report.php')) ?>">
                 <i data-lucide="bar-chart-3" class="w-4 h-4"></i> Reports

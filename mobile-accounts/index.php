@@ -6,6 +6,80 @@ require_once __DIR__ . '/../includes/app.php';
 
 $pageTitle = 'Mobile Accounts - Shop Management';
 $pdo = db();
+$canEditDelete = app_can_edit_delete_records();
+
+$wallet_get_opening_txn = function (PDO $pdo, int $accountId, string $date): ?array {
+    $stmt = $pdo->prepare("
+        SELECT id, date, amount
+        FROM wallet_transactions
+        WHERE account_id = ? AND date = ? AND type = 'opening'
+        ORDER BY id DESC
+        LIMIT 1
+    ");
+    $stmt->execute([$accountId, $date]);
+    $row = $stmt->fetch();
+    return is_array($row) ? $row : null;
+};
+
+$wallet_compute_auto_opening = function (PDO $pdo, int $accountId, string $date): float {
+    $stmt = $pdo->prepare("
+        SELECT date, amount
+        FROM wallet_transactions
+        WHERE account_id = ? AND type = 'opening' AND date < ?
+        ORDER BY date DESC, id DESC
+        LIMIT 1
+    ");
+    $stmt->execute([$accountId, $date]);
+    $baseline = $stmt->fetch();
+
+    $baselineDate = is_array($baseline) ? (string) ($baseline['date'] ?? '') : '';
+    $baselineAmount = is_array($baseline) ? (float) ($baseline['amount'] ?? 0) : 0.0;
+
+    if ($baselineDate !== '') {
+        $stmt = $pdo->prepare("
+            SELECT COALESCE(SUM(
+                CASE
+                    WHEN type = 'receiving' THEN amount
+                    WHEN type = 'sending' THEN -amount
+                    ELSE 0
+                END
+            ), 0)
+            FROM wallet_transactions
+            WHERE account_id = ?
+              AND date >= ?
+              AND date < ?
+              AND type IN ('receiving', 'sending')
+        ");
+        $stmt->execute([$accountId, $baselineDate, $date]);
+        $net = (float) $stmt->fetchColumn();
+        return $baselineAmount + $net;
+    }
+
+    $stmt = $pdo->prepare("
+        SELECT COALESCE(SUM(
+            CASE
+                WHEN type = 'receiving' THEN amount
+                WHEN type = 'sending' THEN -amount
+                ELSE 0
+            END
+        ), 0)
+        FROM wallet_transactions
+        WHERE account_id = ?
+          AND date < ?
+          AND type IN ('receiving', 'sending')
+    ");
+    $stmt->execute([$accountId, $date]);
+    $net = (float) $stmt->fetchColumn();
+    return $net;
+};
+
+$savedCustomers = [];
+try {
+    $stmt = $pdo->query("SELECT id, name, phone FROM customers ORDER BY updated_at DESC, id DESC LIMIT 300");
+    $savedCustomers = $stmt->fetchAll();
+} catch (Throwable $e) {
+    $savedCustomers = [];
+}
 
 // Handle Form Submissions
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -14,27 +88,55 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $type = $_POST['type'] ?? 'easypaisa';
     $accountFilter = (int) ($_POST['account_id'] ?? ($_POST['account_id_filter'] ?? 0));
     $redirectUrl = "mobile-accounts/index.php?date={$date}&type={$type}&account_id={$accountFilter}";
+    $returnUrl = (string) ($_POST['return_url'] ?? $redirectUrl);
 
     if ($action === 'save_opening') {
         $balances = $_POST['balances'] ?? [];
         foreach ($balances as $accId => $amount) {
-            if (trim((string)$amount) !== '') {
-                $amt = (float)$amount;
-                $accId = (int)$accId;
-                
-                $stmt = $pdo->prepare("SELECT id FROM wallet_transactions WHERE account_id=? AND date=? AND type='opening'");
-                $stmt->execute([$accId, $date]);
-                $exists = $stmt->fetchColumn();
-                
-                if ($exists) {
-                    $pdo->prepare("UPDATE wallet_transactions SET amount=? WHERE id=?")->execute([$amt, $exists]);
-                } else {
-                    $pdo->prepare("INSERT INTO wallet_transactions (account_id, date, type, amount) VALUES (?, ?, 'opening', ?)")->execute([$accId, $date, $amt]);
+            $accId = (int) $accId;
+            $raw = trim((string) $amount);
+
+            $stmt = $pdo->prepare("SELECT id FROM wallet_transactions WHERE account_id=? AND date=? AND type='opening' ORDER BY id DESC LIMIT 1");
+            $stmt->execute([$accId, $date]);
+            $exists = (int) ($stmt->fetchColumn() ?: 0);
+
+            if ($raw === '') {
+                if ($exists > 0) {
+                    $pdo->prepare("DELETE FROM wallet_transactions WHERE id=?")->execute([$exists]);
                 }
+                continue;
+            }
+
+            $amt = (float) $raw;
+            if ($exists > 0) {
+                $pdo->prepare("UPDATE wallet_transactions SET amount=? WHERE id=?")->execute([$amt, $exists]);
+            } else {
+                $pdo->prepare("INSERT INTO wallet_transactions (account_id, date, type, amount) VALUES (?, ?, 'opening', ?)")->execute([$accId, $date, $amt]);
             }
         }
         flash_set('success', 'Opening balances saved successfully.');
         
+    } elseif ($action === 'save_customer') {
+        $custName = trim((string) ($_POST['customer_name'] ?? ''));
+        $custPhone = trim((string) ($_POST['customer_phone'] ?? ''));
+        if ($custName === '' || $custPhone === '') {
+            flash_set('error', 'Customer name and phone are required.');
+            app_redirect($returnUrl);
+        }
+        try {
+            $stmt = $pdo->prepare("
+                INSERT INTO customers (name, phone)
+                VALUES (:name, :phone)
+                ON DUPLICATE KEY UPDATE
+                    name = VALUES(name)
+            ");
+            $stmt->execute([':name' => $custName, ':phone' => $custPhone]);
+            flash_set('success', 'Customer saved.');
+        } catch (Throwable $e) {
+            flash_set('error', 'Could not save customer.');
+        }
+        app_redirect($returnUrl);
+
     } elseif ($action === 'add_entry') {
         $accountId = (int)($_POST['account_id'] ?? 0);
         $entryType = $_POST['entry_type'] ?? 'receiving';
@@ -46,6 +148,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $remarks = trim($_POST['remarks'] ?? '');
 
         if ($accountId > 0 && $amount > 0 && in_array($entryType, ['receiving', 'sending'])) {
+            $openingRow = $wallet_get_opening_txn($pdo, $accountId, $date);
+            if (!$openingRow) {
+                $autoOpening = $wallet_compute_auto_opening($pdo, $accountId, $date);
+                $stmt = $pdo->prepare("INSERT INTO wallet_transactions (account_id, date, type, amount) VALUES (?, ?, 'opening', ?)");
+                $stmt->execute([$accountId, $date, $autoOpening]);
+            }
             $stmt = $pdo->prepare("INSERT INTO wallet_transactions (account_id, date, type, amount, charges, customer_name, number, transaction_id, remarks) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
             $stmt->execute([
                 $accountId, $date, $entryType, $amount, $charges,
@@ -54,10 +162,147 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $transactionId !== '' ? $transactionId : null,
                 $remarks !== '' ? $remarks : null
             ]);
+
+            if ($number !== '' && $customerName !== '') {
+                try {
+                    $stmt = $pdo->prepare("
+                        INSERT INTO customers (name, phone)
+                        VALUES (:name, :phone)
+                        ON DUPLICATE KEY UPDATE
+                            name = VALUES(name)
+                    ");
+                    $stmt->execute([':name' => $customerName, ':phone' => $number]);
+                } catch (Throwable $e) {
+                }
+            }
             flash_set('success', 'Transaction added successfully.');
         } else {
             flash_set('error', 'Invalid account or amount.');
         }
+    } elseif ($action === 'update_txn') {
+        if (!$canEditDelete) {
+            flash_set('error', 'Access denied.');
+            app_redirect($returnUrl);
+        }
+
+        $txnId = (int) ($_POST['txn_id'] ?? 0);
+        $txnDate = trim((string) ($_POST['txn_date'] ?? ''));
+        $txnAccountId = (int) ($_POST['txn_account_id'] ?? 0);
+        $txnType = trim((string) ($_POST['txn_type'] ?? ''));
+        $txnAmount = trim((string) ($_POST['txn_amount'] ?? ''));
+        $txnCharges = trim((string) ($_POST['txn_charges'] ?? '0'));
+        $txnCustomer = trim((string) ($_POST['txn_customer_name'] ?? ''));
+        $txnNumber = trim((string) ($_POST['txn_number'] ?? ''));
+        $txnTransactionId = trim((string) ($_POST['txn_transaction_id'] ?? ''));
+        $txnRemarks = trim((string) ($_POST['txn_remarks'] ?? ''));
+
+        if ($txnId <= 0) {
+            flash_set('error', 'Invalid transaction.');
+            app_redirect($returnUrl);
+        }
+        if ($txnDate === '') {
+            flash_set('error', 'Date is required.');
+            app_redirect($returnUrl);
+        }
+        if ($txnAccountId <= 0) {
+            flash_set('error', 'Account is required.');
+            app_redirect($returnUrl);
+        }
+        if (!in_array($txnType, ['opening', 'receiving', 'sending'], true)) {
+            flash_set('error', 'Invalid type.');
+            app_redirect($returnUrl);
+        }
+        if ($txnAmount === '' || !is_numeric($txnAmount) || (float) $txnAmount <= 0) {
+            flash_set('error', 'Amount must be a positive number.');
+            app_redirect($returnUrl);
+        }
+        if ($txnCharges !== '' && !is_numeric($txnCharges)) {
+            flash_set('error', 'Commission must be a number.');
+            app_redirect($returnUrl);
+        }
+
+        $stmt = $pdo->prepare('SELECT * FROM wallet_transactions WHERE id = :id LIMIT 1');
+        $stmt->execute([':id' => $txnId]);
+        $before = $stmt->fetch() ?: null;
+        if (!$before) {
+            flash_set('error', 'Transaction not found.');
+            app_redirect($returnUrl);
+        }
+
+        $stmt = $pdo->prepare("
+            UPDATE wallet_transactions
+            SET account_id = :account_id,
+                date = :date,
+                type = :type,
+                amount = :amount,
+                charges = :charges,
+                customer_name = :customer_name,
+                number = :number,
+                transaction_id = :transaction_id,
+                remarks = :remarks
+            WHERE id = :id
+        ");
+        $stmt->execute([
+            ':account_id' => $txnAccountId,
+            ':date' => $txnDate,
+            ':type' => $txnType,
+            ':amount' => (float) $txnAmount,
+            ':charges' => $txnCharges === '' ? 0.0 : (float) $txnCharges,
+            ':customer_name' => $txnCustomer !== '' ? $txnCustomer : null,
+            ':number' => $txnNumber !== '' ? $txnNumber : null,
+            ':transaction_id' => $txnTransactionId !== '' ? $txnTransactionId : null,
+            ':remarks' => $txnRemarks !== '' ? $txnRemarks : null,
+            ':id' => $txnId,
+        ]);
+
+        $stmt = $pdo->prepare('SELECT * FROM wallet_transactions WHERE id = :id LIMIT 1');
+        $stmt->execute([':id' => $txnId]);
+        $after = $stmt->fetch() ?: null;
+
+        app_audit_log('wallet_transactions', $txnId, 'edit', is_array($before) ? $before : null, is_array($after) ? $after : null);
+
+        if ($txnNumber !== '' && $txnCustomer !== '') {
+            try {
+                $stmt = $pdo->prepare("
+                    INSERT INTO customers (name, phone)
+                    VALUES (:name, :phone)
+                    ON DUPLICATE KEY UPDATE
+                        name = VALUES(name)
+                ");
+                $stmt->execute([':name' => $txnCustomer, ':phone' => $txnNumber]);
+            } catch (Throwable $e) {
+            }
+        }
+
+        flash_set('success', 'Transaction updated.');
+        app_redirect($returnUrl);
+    } elseif ($action === 'delete_txn') {
+        if (!$canEditDelete) {
+            flash_set('error', 'Access denied.');
+            app_redirect($returnUrl);
+        }
+
+        $txnId = (int) ($_POST['txn_id'] ?? 0);
+        if ($txnId <= 0) {
+            flash_set('error', 'Invalid transaction.');
+            app_redirect($returnUrl);
+        }
+
+        $stmt = $pdo->prepare('SELECT * FROM wallet_transactions WHERE id = :id LIMIT 1');
+        $stmt->execute([':id' => $txnId]);
+        $before = $stmt->fetch() ?: null;
+        if (!$before) {
+            flash_set('error', 'Transaction not found.');
+            app_redirect($returnUrl);
+        }
+
+        $stmt = $pdo->prepare('DELETE FROM wallet_transactions WHERE id = :id');
+        $stmt->execute([':id' => $txnId]);
+
+        app_audit_log('wallet_transactions', $txnId, 'delete', is_array($before) ? $before : null, null);
+
+        flash_set('success', 'Transaction deleted.');
+        app_redirect($returnUrl);
     }
     
     app_redirect($redirectUrl);
@@ -100,30 +345,88 @@ $accIds = array_column($selectedAccounts, 'id');
 // Helper to get daily stats for a specific account and date
 function get_daily_stats(PDO $pdo, int $accountId, string $date): array {
     $stmt = $pdo->prepare("
-        SELECT 
-            COALESCE(SUM(CASE 
-                WHEN date < ? AND type IN ('opening', 'receiving') THEN amount
-                WHEN date < ? AND type = 'sending' THEN -amount
-                WHEN date = ? AND type = 'opening' THEN amount
-                ELSE 0 
-            END), 0) AS opening,
-            COALESCE(SUM(CASE WHEN date = ? AND type = 'receiving' THEN amount ELSE 0 END), 0) AS received,
-            COALESCE(SUM(CASE WHEN date = ? AND type = 'sending' THEN amount ELSE 0 END), 0) AS sent
-        FROM wallet_transactions 
-        WHERE account_id = ?
+        SELECT amount
+        FROM wallet_transactions
+        WHERE account_id = ? AND date = ? AND type = 'opening'
+        ORDER BY id DESC
+        LIMIT 1
     ");
-    $stmt->execute([$date, $date, $date, $date, $date, $accountId]);
-    $row = $stmt->fetch();
-    
-    $opening = (float)($row['opening'] ?? 0);
-    $received = (float)($row['received'] ?? 0);
-    $sent = (float)($row['sent'] ?? 0);
-    
+    $stmt->execute([$accountId, $date]);
+    $manualOpening = $stmt->fetchColumn();
+
+    if ($manualOpening !== false && $manualOpening !== null) {
+        $opening = (float) $manualOpening;
+    } else {
+        $stmt = $pdo->prepare("
+            SELECT date, amount
+            FROM wallet_transactions
+            WHERE account_id = ? AND type = 'opening' AND date < ?
+            ORDER BY date DESC, id DESC
+            LIMIT 1
+        ");
+        $stmt->execute([$accountId, $date]);
+        $baseline = $stmt->fetch();
+
+        $baselineDate = is_array($baseline) ? (string) ($baseline['date'] ?? '') : '';
+        $baselineAmount = is_array($baseline) ? (float) ($baseline['amount'] ?? 0) : 0.0;
+
+        if ($baselineDate !== '') {
+            $stmt = $pdo->prepare("
+                SELECT COALESCE(SUM(
+                    CASE
+                        WHEN type = 'receiving' THEN amount
+                        WHEN type = 'sending' THEN -amount
+                        ELSE 0
+                    END
+                ), 0)
+                FROM wallet_transactions
+                WHERE account_id = ?
+                  AND date >= ?
+                  AND date < ?
+                  AND type IN ('receiving', 'sending')
+            ");
+            $stmt->execute([$accountId, $baselineDate, $date]);
+            $net = (float) $stmt->fetchColumn();
+            $opening = $baselineAmount + $net;
+        } else {
+            $stmt = $pdo->prepare("
+                SELECT COALESCE(SUM(
+                    CASE
+                        WHEN type = 'receiving' THEN amount
+                        WHEN type = 'sending' THEN -amount
+                        ELSE 0
+                    END
+                ), 0)
+                FROM wallet_transactions
+                WHERE account_id = ?
+                  AND date < ?
+                  AND type IN ('receiving', 'sending')
+            ");
+            $stmt->execute([$accountId, $date]);
+            $opening = (float) $stmt->fetchColumn();
+        }
+    }
+
+    $stmt = $pdo->prepare("
+        SELECT
+            COALESCE(SUM(CASE WHEN type = 'receiving' THEN amount ELSE 0 END), 0) AS received,
+            COALESCE(SUM(CASE WHEN type = 'sending' THEN amount ELSE 0 END), 0) AS sent
+        FROM wallet_transactions
+        WHERE account_id = ?
+          AND date = ?
+          AND type IN ('receiving', 'sending')
+    ");
+    $stmt->execute([$accountId, $date]);
+    $row = $stmt->fetch() ?: [];
+
+    $received = (float) ($row['received'] ?? 0);
+    $sent = (float) ($row['sent'] ?? 0);
+
     return [
         'opening' => $opening,
         'received' => $received,
         'sent' => $sent,
-        'closing' => $opening + $received - $sent
+        'closing' => $opening + $received - $sent,
     ];
 }
 
@@ -146,6 +449,13 @@ if (!empty($accIds)) {
     $stmt->execute($params);
     foreach ($stmt->fetchAll() as $row) {
         $openingBalances[(int)$row['account_id']] = (float)$row['amount'];
+    }
+}
+
+foreach ($accIds as $aid) {
+    $aid = (int) $aid;
+    if (!array_key_exists($aid, $openingBalances)) {
+        $openingBalances[$aid] = $wallet_compute_auto_opening($pdo, $aid, $currentDate);
     }
 }
 
@@ -404,6 +714,24 @@ require_once __DIR__ . '/../includes/sidebar.php';
 $success = flash_get('success');
 $error = flash_get('error');
 $isOwner = app_is_owner();
+
+$editTxnId = (int) ($_GET['edit_txn_id'] ?? 0);
+$editTxn = null;
+$returnParams = $_GET;
+unset($returnParams['edit_txn_id']);
+$returnQuery = http_build_query($returnParams);
+$returnUrl = 'mobile-accounts/index.php' . ($returnQuery !== '' ? ('?' . $returnQuery) : '');
+if ($editTxnId > 0 && $canEditDelete) {
+    $stmt = $pdo->prepare("
+        SELECT wt.*, a.account_name, a.account_type
+        FROM wallet_transactions wt
+        JOIN accounts a ON a.id = wt.account_id
+        WHERE wt.id = :id
+        LIMIT 1
+    ");
+    $stmt->execute([':id' => $editTxnId]);
+    $editTxn = $stmt->fetch() ?: null;
+}
 ?>
 
 <!-- Header -->
@@ -441,6 +769,73 @@ $isOwner = app_is_owner();
 <?php endif; ?>
 <?php if ($error): ?>
     <div class="alert alert-danger border-0 shadow-sm rounded-xl mb-4"><?= h($error) ?></div>
+<?php endif; ?>
+
+<?php if ($editTxn && $canEditDelete): ?>
+    <div class="bg-white rounded-2xl border border-gray-200 shadow-sm p-4 mb-4">
+        <div class="d-flex align-items-center justify-content-between mb-3">
+            <h2 class="h6 fw-bold text-gray-800 mb-0">Edit Transaction</h2>
+            <a class="btn btn-outline-secondary btn-sm" href="<?= h(app_url($returnUrl)) ?>">Cancel</a>
+        </div>
+        <form method="post" class="row g-3 align-items-end">
+            <input type="hidden" name="action" value="update_txn">
+            <input type="hidden" name="txn_id" value="<?= (int) $editTxn['id'] ?>">
+            <input type="hidden" name="return_url" value="<?= h($returnUrl) ?>">
+            <input type="hidden" name="date" value="<?= h((string) $currentDate) ?>">
+            <input type="hidden" name="type" value="<?= h((string) $currentType) ?>">
+            <input type="hidden" name="account_id_filter" value="<?= h((string) $currentAccountId) ?>">
+
+            <div class="col-12 col-md-2">
+                <label class="form-label">Date</label>
+                <input class="form-control" type="date" name="txn_date" value="<?= h((string) $editTxn['date']) ?>" required>
+            </div>
+            <div class="col-12 col-md-3">
+                <label class="form-label">Account</label>
+                <select class="form-select" name="txn_account_id" required>
+                    <?php foreach ($allAccounts as $a): ?>
+                        <option value="<?= (int) $a['id'] ?>" <?= (int) $a['id'] === (int) $editTxn['account_id'] ? 'selected' : '' ?>>
+                            <?= h((string) $a['account_name']) ?> (<?= h((string) $a['account_type']) ?>)
+                        </option>
+                    <?php endforeach; ?>
+                </select>
+            </div>
+            <div class="col-12 col-md-2">
+                <label class="form-label">Type</label>
+                <select class="form-select" name="txn_type" required>
+                    <option value="opening" <?= (string) $editTxn['type'] === 'opening' ? 'selected' : '' ?>>Opening</option>
+                    <option value="receiving" <?= (string) $editTxn['type'] === 'receiving' ? 'selected' : '' ?>>Receiving</option>
+                    <option value="sending" <?= (string) $editTxn['type'] === 'sending' ? 'selected' : '' ?>>Sending</option>
+                </select>
+            </div>
+            <div class="col-12 col-md-2">
+                <label class="form-label">Amount</label>
+                <input class="form-control" type="number" step="0.01" name="txn_amount" value="<?= h((string) $editTxn['amount']) ?>" required>
+            </div>
+            <div class="col-12 col-md-2">
+                <label class="form-label">Commission</label>
+                <input class="form-control" type="number" step="0.01" name="txn_charges" value="<?= h((string) ($editTxn['charges'] ?? 0)) ?>">
+            </div>
+            <div class="col-12 col-md-3">
+                <label class="form-label">Customer Name</label>
+                <input class="form-control" type="text" name="txn_customer_name" value="<?= h((string) ($editTxn['customer_name'] ?? '')) ?>">
+            </div>
+            <div class="col-12 col-md-3">
+                <label class="form-label">Number</label>
+                <input class="form-control" type="text" name="txn_number" value="<?= h((string) ($editTxn['number'] ?? '')) ?>">
+            </div>
+            <div class="col-12 col-md-3">
+                <label class="form-label">Transaction ID</label>
+                <input class="form-control" type="text" name="txn_transaction_id" value="<?= h((string) ($editTxn['transaction_id'] ?? '')) ?>">
+            </div>
+            <div class="col-12 col-md-6">
+                <label class="form-label">Note</label>
+                <input class="form-control" type="text" name="txn_remarks" value="<?= h((string) ($editTxn['remarks'] ?? '')) ?>">
+            </div>
+            <div class="col-12 col-md-3">
+                <button class="btn btn-primary w-100">Save Changes</button>
+            </div>
+        </form>
+    </div>
 <?php endif; ?>
 
 <?php if ($tab === 'search'): ?>
@@ -543,6 +938,9 @@ $isOwner = app_is_owner();
                     <th>Number</th>
                     <th>Transaction ID</th>
                     <th>Note</th>
+                    <?php if ($canEditDelete): ?>
+                        <th class="text-end">Actions</th>
+                    <?php endif; ?>
                 </tr>
                 </thead>
                 <tbody>
@@ -565,11 +963,31 @@ $isOwner = app_is_owner();
                         <td><?= h((string) ($r['number'] ?? '')) ?></td>
                         <td><?= h((string) ($r['transaction_id'] ?? '')) ?></td>
                         <td><?= h((string) ($r['remarks'] ?? '')) ?></td>
+                        <?php if ($canEditDelete): ?>
+                            <?php
+                            $editParams = $_GET;
+                            $editParams['edit_txn_id'] = (int) ($r['id'] ?? 0);
+                            $editQuery = http_build_query($editParams);
+                            $editUrl = 'mobile-accounts/index.php' . ($editQuery !== '' ? ('?' . $editQuery) : '');
+                            ?>
+                            <td class="text-end">
+                                <a class="btn btn-outline-secondary btn-sm" href="<?= h(app_url($editUrl)) ?>">Edit</a>
+                                <form method="post" class="d-inline" onsubmit="return confirm('Delete this transaction?');">
+                                    <input type="hidden" name="action" value="delete_txn">
+                                    <input type="hidden" name="txn_id" value="<?= (int) ($r['id'] ?? 0) ?>">
+                                    <input type="hidden" name="return_url" value="<?= h($returnUrl) ?>">
+                                    <input type="hidden" name="date" value="<?= h((string) $currentDate) ?>">
+                                    <input type="hidden" name="type" value="<?= h((string) $currentType) ?>">
+                                    <input type="hidden" name="account_id_filter" value="<?= h((string) $currentAccountId) ?>">
+                                    <button class="btn btn-outline-danger btn-sm">Delete</button>
+                                </form>
+                            </td>
+                        <?php endif; ?>
                     </tr>
                 <?php endforeach; ?>
                 <?php if (!$searchRows): ?>
                     <tr>
-                        <td colspan="9" class="text-center text-muted py-4">No transactions found for your filters.</td>
+                        <td colspan="<?= h((string) (9 + ($canEditDelete ? 1 : 0))) ?>" class="text-center text-muted py-4">No transactions found for your filters.</td>
                     </tr>
                 <?php endif; ?>
                 </tbody>
@@ -737,6 +1155,24 @@ $isOwner = app_is_owner();
                 <input type="number" step="0.01" name="charges" class="form-control form-control-sm border-gray-200 rounded-lg" placeholder="0.00">
             </div>
             <div class="col-12 col-md-3">
+                <label class="form-label text-xs fw-semibold text-gray-500 mb-1">Saved Customer</label>
+                <select class="form-select form-select-sm border-gray-200 rounded-lg" id="saved_customer_select">
+                    <option value="">-- Select --</option>
+                    <?php foreach ($savedCustomers as $c): ?>
+                        <option value="<?= (int) $c['id'] ?>" data-name="<?= h((string) $c['name']) ?>" data-phone="<?= h((string) $c['phone']) ?>">
+                            <?= h((string) $c['name']) ?> • <?= h((string) $c['phone']) ?>
+                        </option>
+                    <?php endforeach; ?>
+                </select>
+                <div class="mt-2 d-flex gap-2">
+                    <button type="button" class="btn btn-outline-secondary btn-sm w-100" id="btn_show_add_customer">Add New</button>
+                    <a class="btn btn-outline-secondary btn-sm w-100" href="<?= h(app_url('settings/customers.php')) ?>">All</a>
+                </div>
+                <?php if (!$savedCustomers): ?>
+                    <div class="text-muted small mt-1">No saved customers yet.</div>
+                <?php endif; ?>
+            </div>
+            <div class="col-12 col-md-3">
                 <label class="form-label text-xs fw-semibold text-gray-500 mb-1">Customer Name</label>
                 <input type="text" name="customer_name" class="form-control form-control-sm border-gray-200 rounded-lg" placeholder="Ali Khan">
             </div>
@@ -760,6 +1196,69 @@ $isOwner = app_is_owner();
     </form>
 </div>
 
+<div class="bg-white rounded-2xl border border-gray-200 shadow-sm p-4 mb-4 d-none" id="add_customer_panel">
+    <div class="d-flex align-items-center justify-content-between mb-3">
+        <div class="fw-semibold text-gray-800">Add Customer</div>
+        <button type="button" class="btn btn-outline-secondary btn-sm" id="btn_hide_add_customer">Close</button>
+    </div>
+    <form method="post" class="row g-3 align-items-end">
+        <input type="hidden" name="action" value="save_customer">
+        <input type="hidden" name="return_url" value="<?= h($returnUrl) ?>">
+        <input type="hidden" name="date" value="<?= h((string) $currentDate) ?>">
+        <input type="hidden" name="type" value="<?= h((string) $currentType) ?>">
+        <input type="hidden" name="account_id_filter" value="<?= h((string) $currentAccountId) ?>">
+        <div class="col-12 col-md-5">
+            <label class="form-label">Customer Name</label>
+            <input class="form-control" type="text" name="customer_name" id="new_customer_name" required>
+        </div>
+        <div class="col-12 col-md-4">
+            <label class="form-label">Phone</label>
+            <input class="form-control" type="text" name="customer_phone" id="new_customer_phone" required>
+        </div>
+        <div class="col-12 col-md-3">
+            <button class="btn btn-primary w-100">Save Customer</button>
+        </div>
+    </form>
+</div>
+
+<script>
+    (function () {
+        const sel = document.getElementById('saved_customer_select');
+        const btnShow = document.getElementById('btn_show_add_customer');
+        const btnHide = document.getElementById('btn_hide_add_customer');
+        const panel = document.getElementById('add_customer_panel');
+        const newName = document.getElementById('new_customer_name');
+        const newPhone = document.getElementById('new_customer_phone');
+
+        if (!sel) return;
+        const form = sel.closest('form');
+        if (!form) return;
+        const nameInput = form.querySelector('input[name="customer_name"]');
+        const phoneInput = form.querySelector('input[name="number"]');
+
+        sel.addEventListener('change', () => {
+            const opt = sel.options[sel.selectedIndex];
+            const n = opt ? (opt.getAttribute('data-name') || '') : '';
+            const p = opt ? (opt.getAttribute('data-phone') || '') : '';
+            if (nameInput && n) nameInput.value = n;
+            if (phoneInput && p) phoneInput.value = p;
+        });
+
+        if (btnShow && panel) {
+            btnShow.addEventListener('click', () => {
+                panel.classList.remove('d-none');
+                if (newName && nameInput && nameInput.value) newName.value = nameInput.value;
+                if (newPhone && phoneInput && phoneInput.value) newPhone.value = phoneInput.value;
+            });
+        }
+        if (btnHide && panel) {
+            btnHide.addEventListener('click', () => {
+                panel.classList.add('d-none');
+            });
+        }
+    })();
+</script>
+
 <!-- Bottom Section: Table & Summary -->
 <div class="row g-4">
     <!-- Table -->
@@ -781,6 +1280,9 @@ $isOwner = app_is_owner();
                             <th class="py-3 px-4 font-semibold">Customer</th>
                             <th class="py-3 px-4 font-semibold">Transaction ID</th>
                             <th class="py-3 px-4 font-semibold">Note</th>
+                            <?php if ($canEditDelete): ?>
+                                <th class="py-3 px-4 font-semibold text-end">Actions</th>
+                            <?php endif; ?>
                         </tr>
                     </thead>
                     <tbody class="divide-y divide-gray-100">
@@ -808,11 +1310,31 @@ $isOwner = app_is_owner();
                             <td class="py-3 px-4 text-gray-700"><?= h((string)$t['customer_name']) ?></td>
                             <td class="py-3 px-4 text-gray-700"><?= h((string)$t['transaction_id']) ?></td>
                             <td class="py-3 px-4 text-gray-500"><?= h((string)$t['remarks']) ?: '-' ?></td>
+                            <?php if ($canEditDelete): ?>
+                                <?php
+                                $editParams = $_GET;
+                                $editParams['edit_txn_id'] = (int) ($t['id'] ?? 0);
+                                $editQuery = http_build_query($editParams);
+                                $editUrl = 'mobile-accounts/index.php' . ($editQuery !== '' ? ('?' . $editQuery) : '');
+                                ?>
+                                <td class="py-3 px-4 text-end">
+                                    <a class="btn btn-outline-secondary btn-sm" href="<?= h(app_url($editUrl)) ?>">Edit</a>
+                                    <form method="post" class="d-inline" onsubmit="return confirm('Delete this transaction?');">
+                                        <input type="hidden" name="action" value="delete_txn">
+                                        <input type="hidden" name="txn_id" value="<?= (int) ($t['id'] ?? 0) ?>">
+                                        <input type="hidden" name="return_url" value="<?= h($returnUrl) ?>">
+                                        <input type="hidden" name="date" value="<?= h((string) $currentDate) ?>">
+                                        <input type="hidden" name="type" value="<?= h((string) $currentType) ?>">
+                                        <input type="hidden" name="account_id_filter" value="<?= h((string) $currentAccountId) ?>">
+                                        <button class="btn btn-outline-danger btn-sm">Delete</button>
+                                    </form>
+                                </td>
+                            <?php endif; ?>
                         </tr>
                         <?php endforeach; ?>
                         <?php if (empty($transactions)): ?>
                         <tr>
-                            <td colspan="9" class="py-5 text-center text-gray-500">No transactions found for this date.</td>
+                            <td colspan="<?= h((string) (9 + ($canEditDelete ? 1 : 0))) ?>" class="py-5 text-center text-gray-500">No transactions found for this date.</td>
                         </tr>
                         <?php endif; ?>
                     </tbody>

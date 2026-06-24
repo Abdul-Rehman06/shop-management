@@ -9,7 +9,17 @@ $pageTitle = 'Bank Transfer - Money Sent';
 $pdo = db();
 $accounts = wallet_accounts($pdo, 'bank');
 
+$savedCustomers = [];
+try {
+    $stmt = $pdo->query("SELECT id, name, phone FROM customers ORDER BY updated_at DESC, id DESC LIMIT 300");
+    $savedCustomers = $stmt->fetchAll();
+} catch (Throwable $e) {
+    $savedCustomers = [];
+}
+
 $date = date('Y-m-d');
+$customerName = '';
+$customerPhone = '';
 $transactionId = '';
 $amount = '';
 $charges = '';
@@ -31,6 +41,8 @@ if (!$validAccount) {
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $accountId = (int) ($_POST['account_id'] ?? 0);
     $date = trim((string) ($_POST['date'] ?? ''));
+    $customerName = trim((string) ($_POST['customer_name'] ?? ''));
+    $customerPhone = trim((string) ($_POST['customer_phone'] ?? ''));
     $transactionId = trim((string) ($_POST['transaction_id'] ?? ''));
     $amount = trim((string) ($_POST['amount'] ?? ''));
     $charges = trim((string) ($_POST['charges'] ?? ''));
@@ -55,19 +67,34 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } else {
         $stmt = $pdo->prepare('
             INSERT INTO wallet_transactions
-                (account_id, date, transaction_id, type, amount, charges, remarks)
+                (account_id, date, customer_name, number, transaction_id, type, amount, charges, remarks)
             VALUES
-                (:account_id, :date, :transaction_id, :type, :amount, :charges, :remarks)
+                (:account_id, :date, :customer_name, :number, :transaction_id, :type, :amount, :charges, :remarks)
         ');
         $stmt->execute([
             ':account_id' => $accountId,
             ':date' => $date,
+            ':customer_name' => $customerName !== '' ? $customerName : null,
+            ':number' => $customerPhone !== '' ? $customerPhone : null,
             ':transaction_id' => $transactionId !== '' ? $transactionId : null,
             ':type' => 'sending',
             ':amount' => (float) $amount,
             ':charges' => $charges === '' ? 0.0 : (float) $charges,
             ':remarks' => $remarks !== '' ? $remarks : null,
         ]);
+
+        if ($customerName !== '' && $customerPhone !== '') {
+            try {
+                $stmt = $pdo->prepare("
+                    INSERT INTO customers (name, phone)
+                    VALUES (:name, :phone)
+                    ON DUPLICATE KEY UPDATE
+                        name = VALUES(name)
+                ");
+                $stmt->execute([':name' => $customerName, ':phone' => $customerPhone]);
+            } catch (Throwable $e) {
+            }
+        }
 
         flash_set('success', 'Bank sending transaction added successfully.');
         app_redirect('bank-transfer/index.php?account_id=' . $accountId);
@@ -103,8 +130,30 @@ require_once __DIR__ . '/../includes/sidebar.php';
                     </select>
                 </div>
                 <div class="col-12 col-md-3">
+                    <label class="form-label" for="saved_customer_select">Saved Customer</label>
+                    <select class="form-select" id="saved_customer_select">
+                        <option value="">-- Select --</option>
+                        <?php foreach ($savedCustomers as $c): ?>
+                            <option value="<?= (int) $c['id'] ?>" data-name="<?= h((string) $c['name']) ?>" data-phone="<?= h((string) $c['phone']) ?>">
+                                <?= h((string) $c['name']) ?> • <?= h((string) $c['phone']) ?>
+                            </option>
+                        <?php endforeach; ?>
+                    </select>
+                    <div class="mt-2">
+                        <a class="btn btn-outline-secondary btn-sm w-100" href="<?= h(app_url('settings/customers.php')) ?>">Add Customer</a>
+                    </div>
+                </div>
+                <div class="col-12 col-md-3">
                     <label class="form-label" for="date">Date</label>
                     <input class="form-control" type="date" id="date" name="date" value="<?= h($date) ?>" required>
+                </div>
+                <div class="col-12 col-md-3">
+                    <label class="form-label" for="customer_name">Customer Name</label>
+                    <input class="form-control" type="text" id="customer_name" name="customer_name" value="<?= h($customerName) ?>">
+                </div>
+                <div class="col-12 col-md-3">
+                    <label class="form-label" for="customer_phone">Customer Phone</label>
+                    <input class="form-control" type="text" id="customer_phone" name="customer_phone" value="<?= h($customerPhone) ?>">
                 </div>
                 <div class="col-12 col-md-3">
                     <label class="form-label" for="transaction_id">Transaction ID</label>
@@ -130,5 +179,21 @@ require_once __DIR__ . '/../includes/sidebar.php';
         </form>
     </div>
 </div>
+
+<script>
+    (function () {
+        const sel = document.getElementById('saved_customer_select');
+        const nameInput = document.getElementById('customer_name');
+        const phoneInput = document.getElementById('customer_phone');
+        if (!sel || !nameInput || !phoneInput) return;
+        sel.addEventListener('change', () => {
+            const opt = sel.options[sel.selectedIndex];
+            const n = opt ? (opt.getAttribute('data-name') || '') : '';
+            const p = opt ? (opt.getAttribute('data-phone') || '') : '';
+            if (n) nameInput.value = n;
+            if (p) phoneInput.value = p;
+        });
+    })();
+</script>
 
 <?php require_once __DIR__ . '/../includes/footer.php'; ?>

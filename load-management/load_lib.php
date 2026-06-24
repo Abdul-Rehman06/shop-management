@@ -5,6 +5,28 @@ declare(strict_types=1);
 function load_ensure_schema(PDO $pdo): void
 {
     $pdo->exec("
+        CREATE TABLE IF NOT EXISTS load_networks (
+            id INT UNSIGNED NOT NULL AUTO_INCREMENT,
+            network_name VARCHAR(50) NOT NULL,
+            PRIMARY KEY (id),
+            UNIQUE KEY uq_load_networks_network_name (network_name)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    ");
+
+    $countNetworks = 0;
+    try {
+        $countNetworks = (int) $pdo->query("SELECT COUNT(*) FROM load_networks")->fetchColumn();
+    } catch (Throwable $e) {
+        $countNetworks = 0;
+    }
+    if ($countNetworks === 0) {
+        $stmt = $pdo->prepare("INSERT IGNORE INTO load_networks (network_name) VALUES (:name)");
+        foreach (['Jazz', 'Zong', 'Ufone', 'Telenor'] as $name) {
+            $stmt->execute([':name' => $name]);
+        }
+    }
+
+    $pdo->exec("
         CREATE TABLE IF NOT EXISTS load_entries (
             id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
             network VARCHAR(50) NOT NULL,
@@ -108,7 +130,12 @@ function load_ensure_schema(PDO $pdo): void
 
 function load_get_networks(PDO $pdo): array
 {
-    $rows = $pdo->query('SELECT network_name FROM load_networks ORDER BY network_name ASC')->fetchAll();
+    $rows = [];
+    try {
+        $rows = $pdo->query('SELECT network_name FROM load_networks ORDER BY network_name ASC')->fetchAll();
+    } catch (Throwable $e) {
+        $rows = [];
+    }
     $networks = [];
     foreach ($rows as $row) {
         $name = trim((string) ($row['network_name'] ?? ''));

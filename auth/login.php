@@ -63,6 +63,45 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 app_issue_remember_token((int) $admin['id']);
             }
 
+            try {
+                $pdo = db();
+                $stmt = $pdo->prepare("
+                    INSERT INTO admin_login_logs (admin_id, ip_address, user_agent)
+                    VALUES (:admin_id, :ip_address, :user_agent)
+                ");
+                $stmt->execute([
+                    ':admin_id' => (int) $admin['id'],
+                    ':ip_address' => !empty($_SERVER['REMOTE_ADDR']) ? (string) $_SERVER['REMOTE_ADDR'] : null,
+                    ':user_agent' => !empty($_SERVER['HTTP_USER_AGENT']) ? (string) $_SERVER['HTTP_USER_AGENT'] : null,
+                ]);
+            } catch (Throwable $e) {
+            }
+
+            try {
+                $ownerEmail = 'mughalsahab22000@gmail.com';
+                $adminName = (string) ($admin['name'] ?? 'Admin');
+                $adminRole = (string) ($admin['role'] ?? '');
+                $ip = (string) ($_SERVER['REMOTE_ADDR'] ?? '');
+                $ua = (string) ($_SERVER['HTTP_USER_AGENT'] ?? '');
+                $when = date('Y-m-d H:i:s');
+                $subject = 'Admin Login Alert - Shop Management';
+                $body = "Admin Login Alert\n\n"
+                    . "Admin: {$adminName}\n"
+                    . ($adminRole !== '' ? ("Role: {$adminRole}\n") : '')
+                    . "Login Date & Time: {$when}\n"
+                    . ($ip !== '' ? ("IP Address: {$ip}\n") : '')
+                    . ($ua !== '' ? ("Device/Browser: {$ua}\n") : '');
+
+                $fromDomain = preg_replace('/[^a-z0-9.-]/i', '', (string) ($_SERVER['SERVER_NAME'] ?? 'localhost'));
+                $from = $fromDomain !== '' ? ('no-reply@' . $fromDomain) : 'no-reply@localhost';
+                $headers = "From: {$from}\r\n"
+                    . "Reply-To: {$from}\r\n"
+                    . "Content-Type: text/plain; charset=UTF-8\r\n";
+
+                @mail($ownerEmail, $subject, $body, $headers);
+            } catch (Throwable $e) {
+            }
+
             header('Location: ' . rtrim(dirname((string) ($_SERVER['SCRIPT_NAME'] ?? '')), '/\\') . '/../dashboard/index.php');
             exit;
         }

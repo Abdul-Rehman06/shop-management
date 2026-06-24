@@ -25,8 +25,22 @@ function isActive(string $path, string $currentPath): string {
             <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors <?= isActive('udhar', $currentPath) ?>" href="<?= h(app_url('udhar/index.php')) ?>">
                 <i data-lucide="hand-coins" class="w-5 h-5"></i> Udhar
             </a>
+            <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors <?= isActive('credit', $currentPath) ?>" href="<?= h(app_url('credit/index.php')) ?>">
+                <i data-lucide="circle-dollar-sign" class="w-5 h-5"></i> Credit
+            </a>
+            <?php if (app_is_owner()): ?>
+                <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors <?= isActive('settings/customers.php', $currentPath) ?>" href="<?= h(app_url('settings/customers.php')) ?>">
+                    <i data-lucide="contact" class="w-5 h-5"></i> Customers
+                </a>
+            <?php endif; ?>
             <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors <?= isActive('bank-deposits', $currentPath) ?>" href="<?= h(app_url('bank-deposits/index.php')) ?>">
                 <i data-lucide="landmark" class="w-5 h-5"></i> Bank Deposits
+            </a>
+            <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors <?= isActive('dealer-payments', $currentPath) ?>" href="<?= h(app_url('dealer-payments/index.php')) ?>">
+                <i data-lucide="users" class="w-5 h-5"></i> Dealer Payments
+            </a>
+            <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors <?= isActive('cash-management', $currentPath) ?>" href="<?= h(app_url('cash-management/index.php')) ?>">
+                <i data-lucide="banknote" class="w-5 h-5"></i> Cash Management
             </a>
             <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors <?= isActive('expenses', $currentPath) ?>" href="<?= h(app_url('expenses/index.php')) ?>">
                 <i data-lucide="receipt" class="w-5 h-5"></i> Expenses

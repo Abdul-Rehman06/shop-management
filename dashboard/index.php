@@ -14,7 +14,99 @@ $canViewProfit = app_can_view_profit();
 
 $networks = ['Jazz', 'Zong', 'Ufone', 'Telenor'];
 
-$walletAll = wallet_combined_summary($pdo, null, true);
+$walletOpenForDate = function (PDO $pdo, int $accountId, string $date): float {
+    $stmt = $pdo->prepare("
+        SELECT amount
+        FROM wallet_transactions
+        WHERE account_id = ? AND date = ? AND type = 'opening'
+        ORDER BY id DESC
+        LIMIT 1
+    ");
+    $stmt->execute([$accountId, $date]);
+    $manual = $stmt->fetchColumn();
+    if ($manual !== false && $manual !== null) {
+        return (float) $manual;
+    }
+
+    $stmt = $pdo->prepare("
+        SELECT date, amount
+        FROM wallet_transactions
+        WHERE account_id = ? AND type = 'opening' AND date < ?
+        ORDER BY date DESC, id DESC
+        LIMIT 1
+    ");
+    $stmt->execute([$accountId, $date]);
+    $baseline = $stmt->fetch();
+
+    $baselineDate = is_array($baseline) ? (string) ($baseline['date'] ?? '') : '';
+    $baselineAmount = is_array($baseline) ? (float) ($baseline['amount'] ?? 0) : 0.0;
+
+    if ($baselineDate !== '') {
+        $stmt = $pdo->prepare("
+            SELECT COALESCE(SUM(
+                CASE
+                    WHEN type = 'receiving' THEN amount
+                    WHEN type = 'sending' THEN -amount
+                    ELSE 0
+                END
+            ), 0)
+            FROM wallet_transactions
+            WHERE account_id = ?
+              AND date >= ?
+              AND date < ?
+              AND type IN ('receiving', 'sending')
+        ");
+        $stmt->execute([$accountId, $baselineDate, $date]);
+        $net = (float) $stmt->fetchColumn();
+        return $baselineAmount + $net;
+    }
+
+    $stmt = $pdo->prepare("
+        SELECT COALESCE(SUM(
+            CASE
+                WHEN type = 'receiving' THEN amount
+                WHEN type = 'sending' THEN -amount
+                ELSE 0
+            END
+        ), 0)
+        FROM wallet_transactions
+        WHERE account_id = ?
+          AND date < ?
+          AND type IN ('receiving', 'sending')
+    ");
+    $stmt->execute([$accountId, $date]);
+    return (float) $stmt->fetchColumn();
+};
+
+$today = date('Y-m-d');
+$walletAll = ['opening' => 0.0, 'receiving' => 0.0, 'sending' => 0.0, 'closing' => 0.0];
+try {
+    $stmt = $pdo->query("SELECT id FROM accounts WHERE status = 'active'");
+    $accountIds = array_map(static fn (array $r): int => (int) ($r['id'] ?? 0), $stmt->fetchAll());
+    $accountIds = array_values(array_filter($accountIds, static fn (int $x): bool => $x > 0));
+
+    foreach ($accountIds as $aid) {
+        $opening = $walletOpenForDate($pdo, $aid, $today);
+
+        $stmt = $pdo->prepare("
+            SELECT
+                COALESCE(SUM(CASE WHEN type = 'receiving' THEN amount ELSE 0 END), 0) AS receiving_total,
+                COALESCE(SUM(CASE WHEN type = 'sending' THEN amount ELSE 0 END), 0) AS sending_total
+            FROM wallet_transactions
+            WHERE account_id = ? AND date = ? AND type IN ('receiving', 'sending')
+        ");
+        $stmt->execute([$aid, $today]);
+        $r = $stmt->fetch() ?: [];
+        $recv = (float) ($r['receiving_total'] ?? 0);
+        $sent = (float) ($r['sending_total'] ?? 0);
+
+        $walletAll['opening'] += $opening;
+        $walletAll['receiving'] += $recv;
+        $walletAll['sending'] += $sent;
+        $walletAll['closing'] += ($opening + $recv - $sent);
+    }
+} catch (Throwable $e) {
+}
 
 $loadBalances = array_fill_keys($networks, 0.0);
 $pdo->exec("
@@ -112,6 +204,135 @@ $monthlyExpense = (float) $pdo->query("
     WHERE date >= DATE_FORMAT(CURDATE(), '%Y-%m-01')
       AND date <= LAST_DAY(CURDATE())
 ")->fetchColumn();
+
+$creditAdvanceTotal = 0.0;
+$creditUsedTotal = 0.0;
+$creditRemainingTotal = 0.0;
+try {
+    $stmt = $pdo->query("
+        SELECT
+            COALESCE(SUM(CASE WHEN txn_type = 'advance' THEN amount ELSE 0 END), 0) AS adv_total,
+            COALESCE(SUM(CASE WHEN txn_type = 'used' THEN amount ELSE 0 END), 0) AS used_total
+        FROM credit_transactions
+    ");
+    $row = $stmt->fetch() ?: [];
+    $creditAdvanceTotal = (float) ($row['adv_total'] ?? 0);
+    $creditUsedTotal = (float) ($row['used_total'] ?? 0);
+    $creditRemainingTotal = $creditAdvanceTotal - $creditUsedTotal;
+} catch (Throwable $e) {
+}
+
+$dealerPaymentsMonthTotal = 0.0;
+$dealerPaymentsTodayTotal = 0.0;
+$dealerPaymentsByNetwork = ['Jazz' => 0.0, 'Zong' => 0.0, 'Telenor' => 0.0, 'Ufone' => 0.0];
+$dealerRemainingPayableMonth = 0.0;
+try {
+    $dealerPaymentsTodayTotal = (float) $pdo->query("
+        SELECT COALESCE(SUM(amount), 0)
+        FROM dealer_payments
+        WHERE payment_date = CURDATE()
+    ")->fetchColumn();
+    $dealerPaymentsMonthTotal = (float) $pdo->query("
+        SELECT COALESCE(SUM(amount), 0)
+        FROM dealer_payments
+        WHERE payment_date >= DATE_FORMAT(CURDATE(), '%Y-%m-01')
+          AND payment_date <= LAST_DAY(CURDATE())
+    ")->fetchColumn();
+
+    $stmt = $pdo->query("
+        SELECT network, COALESCE(SUM(amount), 0) AS total
+        FROM dealer_payments
+        WHERE payment_date >= DATE_FORMAT(CURDATE(), '%Y-%m-01')
+          AND payment_date <= LAST_DAY(CURDATE())
+        GROUP BY network
+    ");
+    foreach ($stmt->fetchAll() as $r) {
+        $n = (string) ($r['network'] ?? '');
+        if ($n !== '' && array_key_exists($n, $dealerPaymentsByNetwork)) {
+            $dealerPaymentsByNetwork[$n] = (float) ($r['total'] ?? 0);
+        }
+    }
+
+    $purchasedByNetwork = ['Jazz' => 0.0, 'Zong' => 0.0, 'Telenor' => 0.0, 'Ufone' => 0.0];
+    $stmt = $pdo->query("
+        SELECT network, COALESCE(SUM(purchased_balance), 0) AS total
+        FROM load_entries
+        WHERE date >= DATE_FORMAT(CURDATE(), '%Y-%m-01')
+          AND date <= LAST_DAY(CURDATE())
+        GROUP BY network
+    ");
+    foreach ($stmt->fetchAll() as $r) {
+        $n = (string) ($r['network'] ?? '');
+        if ($n !== '' && array_key_exists($n, $purchasedByNetwork)) {
+            $purchasedByNetwork[$n] = (float) ($r['total'] ?? 0);
+        }
+    }
+
+    foreach ($purchasedByNetwork as $n => $purchased) {
+        $dealerRemainingPayableMonth += (float) $purchased - (float) ($dealerPaymentsByNetwork[$n] ?? 0);
+    }
+} catch (Throwable $e) {
+}
+
+$cashOpeningToday = 0.0;
+$cashReceivedToday = 0.0;
+$cashSentToday = 0.0;
+$cashExpectedToday = 0.0;
+$cashCountToday = null;
+try {
+    $cashOpeningToday = (float) $pdo->query("
+        SELECT COALESCE(SUM(wt.amount), 0)
+        FROM wallet_transactions wt
+        JOIN accounts a ON a.id = wt.account_id
+        WHERE a.account_type = 'cash'
+          AND wt.date = CURDATE()
+          AND wt.type = 'opening'
+    ")->fetchColumn();
+    $walletCashReceiving = (float) $pdo->query("
+        SELECT COALESCE(SUM(wt.amount), 0)
+        FROM wallet_transactions wt
+        JOIN accounts a ON a.id = wt.account_id
+        WHERE a.account_type = 'cash'
+          AND wt.date = CURDATE()
+          AND wt.type = 'receiving'
+    ")->fetchColumn();
+    $walletCashSending = (float) $pdo->query("
+        SELECT COALESCE(SUM(wt.amount), 0)
+        FROM wallet_transactions wt
+        JOIN accounts a ON a.id = wt.account_id
+        WHERE a.account_type = 'cash'
+          AND wt.date = CURDATE()
+          AND wt.type = 'sending'
+    ")->fetchColumn();
+    $salesCash = (float) $pdo->query("
+        SELECT COALESCE(SUM(quantity * sale_price), 0)
+        FROM sales
+        WHERE DATE(created_at) = CURDATE()
+    ")->fetchColumn();
+    $loadSalesCash = (float) $pdo->query("
+        SELECT COALESCE(SUM(sold_balance), 0)
+        FROM load_entries
+        WHERE date = CURDATE()
+    ")->fetchColumn();
+    $udharRecoveryCash = (float) $pdo->query("
+        SELECT COALESCE(SUM(amount), 0)
+        FROM udhar_transactions
+        WHERE txn_date = CURDATE() AND txn_type = 'payment'
+    ")->fetchColumn();
+    $creditAdvanceCash = (float) $pdo->query("
+        SELECT COALESCE(SUM(amount), 0)
+        FROM credit_transactions
+        WHERE txn_date = CURDATE() AND txn_type = 'advance'
+    ")->fetchColumn();
+
+    $cashReceivedToday = $walletCashReceiving + $salesCash + $loadSalesCash + $udharRecoveryCash + $creditAdvanceCash;
+    $cashSentToday = $walletCashSending + $todayExpense + $dealerPaymentsTodayTotal;
+    $cashExpectedToday = $cashOpeningToday + $cashReceivedToday - $cashSentToday;
+
+    $stmt = $pdo->query("SELECT * FROM cash_counts WHERE count_date = CURDATE() LIMIT 1");
+    $cashCountToday = $stmt->fetch() ?: null;
+} catch (Throwable $e) {
+}
 
 $todayProfit = 0.0;
 $monthlyProfit = 0.0;
@@ -431,6 +652,117 @@ $extraHead = '<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/char
         </div>
     <?php endif; ?>
 </div>
+
+<?php if (app_is_owner()): ?>
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+        <div class="glass-card rounded-2xl p-6 relative overflow-hidden group hover:-translate-y-1 transition-all duration-300">
+            <div class="absolute -right-6 -top-6 w-24 h-24 bg-brand-50 rounded-full group-hover:scale-150 transition-transform duration-500 ease-out z-0"></div>
+            <div class="relative z-10">
+                <div class="flex items-center justify-between mb-4">
+                    <div class="text-sm font-semibold text-gray-500 uppercase tracking-wider">Total Credit</div>
+                    <div class="p-2 bg-brand-100 text-brand-600 rounded-lg"><i data-lucide="circle-dollar-sign" class="w-5 h-5"></i></div>
+                </div>
+                <div class="text-3xl font-bold text-gray-900 tracking-tight">Rs <?= money($creditAdvanceTotal) ?></div>
+                <div class="text-xs text-gray-500 mt-1">Advance received</div>
+            </div>
+        </div>
+
+        <div class="glass-card rounded-2xl p-6 relative overflow-hidden group hover:-translate-y-1 transition-all duration-300">
+            <div class="absolute -right-6 -top-6 w-24 h-24 bg-gray-50 rounded-full group-hover:scale-150 transition-transform duration-500 ease-out z-0"></div>
+            <div class="relative z-10">
+                <div class="flex items-center justify-between mb-4">
+                    <div class="text-sm font-semibold text-gray-500 uppercase tracking-wider">Used Credit</div>
+                    <div class="p-2 bg-gray-100 text-gray-700 rounded-lg"><i data-lucide="minus-circle" class="w-5 h-5"></i></div>
+                </div>
+                <div class="text-3xl font-bold text-gray-900 tracking-tight">Rs <?= money($creditUsedTotal) ?></div>
+                <div class="text-xs text-gray-500 mt-1">Credit used</div>
+            </div>
+        </div>
+
+        <div class="glass-card rounded-2xl p-6 relative overflow-hidden group hover:-translate-y-1 transition-all duration-300">
+            <div class="absolute -right-6 -top-6 w-24 h-24 bg-emerald-50 rounded-full group-hover:scale-150 transition-transform duration-500 ease-out z-0"></div>
+            <div class="relative z-10">
+                <div class="flex items-center justify-between mb-4">
+                    <div class="text-sm font-semibold text-gray-500 uppercase tracking-wider">Remaining Credit</div>
+                    <div class="p-2 bg-emerald-100 text-emerald-600 rounded-lg"><i data-lucide="badge-check" class="w-5 h-5"></i></div>
+                </div>
+                <div class="text-3xl font-bold text-gray-900 tracking-tight">Rs <?= money($creditRemainingTotal) ?></div>
+                <div class="text-xs text-gray-500 mt-1">Advance - used</div>
+            </div>
+        </div>
+
+        <div class="glass-card rounded-2xl p-6 relative overflow-hidden group hover:-translate-y-1 transition-all duration-300">
+            <div class="absolute -right-6 -top-6 w-24 h-24 bg-blue-50 rounded-full group-hover:scale-150 transition-transform duration-500 ease-out z-0"></div>
+            <div class="relative z-10">
+                <div class="flex items-center justify-between mb-4">
+                    <div class="text-sm font-semibold text-gray-500 uppercase tracking-wider">Dealer Payments</div>
+                    <div class="p-2 bg-blue-100 text-blue-600 rounded-lg"><i data-lucide="users" class="w-5 h-5"></i></div>
+                </div>
+                <div class="text-3xl font-bold text-gray-900 tracking-tight">Rs <?= money($dealerPaymentsMonthTotal) ?></div>
+                <div class="text-xs text-gray-500 mt-1">This month • Payable: Rs <?= money($dealerRemainingPayableMonth) ?></div>
+                <div class="text-xs text-gray-500 mt-1">
+                    Jazz: <?= money($dealerPaymentsByNetwork['Jazz'] ?? 0) ?> • Zong: <?= money($dealerPaymentsByNetwork['Zong'] ?? 0) ?>
+                    • Telenor: <?= money($dealerPaymentsByNetwork['Telenor'] ?? 0) ?> • Ufone: <?= money($dealerPaymentsByNetwork['Ufone'] ?? 0) ?>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+        <div class="glass-card rounded-2xl p-6 relative overflow-hidden group hover:-translate-y-1 transition-all duration-300">
+            <div class="absolute -right-6 -top-6 w-24 h-24 bg-amber-50 rounded-full group-hover:scale-150 transition-transform duration-500 ease-out z-0"></div>
+            <div class="relative z-10">
+                <div class="flex items-center justify-between mb-4">
+                    <div class="text-sm font-semibold text-gray-500 uppercase tracking-wider">Expected Cash</div>
+                    <div class="p-2 bg-amber-100 text-amber-600 rounded-lg"><i data-lucide="banknote" class="w-5 h-5"></i></div>
+                </div>
+                <div class="text-3xl font-bold text-gray-900 tracking-tight">Rs <?= money($cashExpectedToday) ?></div>
+                <div class="text-xs text-gray-500 mt-1">Today (drawer)</div>
+            </div>
+        </div>
+
+        <div class="glass-card rounded-2xl p-6 relative overflow-hidden group hover:-translate-y-1 transition-all duration-300">
+            <div class="absolute -right-6 -top-6 w-24 h-24 bg-gray-50 rounded-full group-hover:scale-150 transition-transform duration-500 ease-out z-0"></div>
+            <div class="relative z-10">
+                <div class="flex items-center justify-between mb-4">
+                    <div class="text-sm font-semibold text-gray-500 uppercase tracking-wider">Cash Count</div>
+                    <div class="p-2 bg-gray-100 text-gray-700 rounded-lg"><i data-lucide="clipboard-check" class="w-5 h-5"></i></div>
+                </div>
+                <?php if (is_array($cashCountToday)): ?>
+                    <div class="text-3xl font-bold text-gray-900 tracking-tight">Rs <?= money((float) ($cashCountToday['actual_cash'] ?? 0)) ?></div>
+                    <div class="text-xs text-gray-500 mt-1">Actual • Diff: Rs <?= money((float) ($cashCountToday['difference'] ?? 0)) ?></div>
+                <?php else: ?>
+                    <div class="text-3xl font-bold text-gray-900 tracking-tight">Not Counted</div>
+                    <div class="text-xs text-gray-500 mt-1">Count cash from Cash Management</div>
+                <?php endif; ?>
+            </div>
+        </div>
+
+        <div class="glass-card rounded-2xl p-6 relative overflow-hidden group hover:-translate-y-1 transition-all duration-300">
+            <div class="absolute -right-6 -top-6 w-24 h-24 bg-emerald-50 rounded-full group-hover:scale-150 transition-transform duration-500 ease-out z-0"></div>
+            <div class="relative z-10">
+                <div class="flex items-center justify-between mb-4">
+                    <div class="text-sm font-semibold text-gray-500 uppercase tracking-wider">Cash Received</div>
+                    <div class="p-2 bg-emerald-100 text-emerald-600 rounded-lg"><i data-lucide="arrow-down-left" class="w-5 h-5"></i></div>
+                </div>
+                <div class="text-3xl font-bold text-gray-900 tracking-tight">Rs <?= money($cashReceivedToday) ?></div>
+                <div class="text-xs text-gray-500 mt-1">Today</div>
+            </div>
+        </div>
+
+        <div class="glass-card rounded-2xl p-6 relative overflow-hidden group hover:-translate-y-1 transition-all duration-300">
+            <div class="absolute -right-6 -top-6 w-24 h-24 bg-red-50 rounded-full group-hover:scale-150 transition-transform duration-500 ease-out z-0"></div>
+            <div class="relative z-10">
+                <div class="flex items-center justify-between mb-4">
+                    <div class="text-sm font-semibold text-gray-500 uppercase tracking-wider">Cash Sent</div>
+                    <div class="p-2 bg-red-100 text-red-600 rounded-lg"><i data-lucide="arrow-up-right" class="w-5 h-5"></i></div>
+                </div>
+                <div class="text-3xl font-bold text-gray-900 tracking-tight">Rs <?= money($cashSentToday) ?></div>
+                <div class="text-xs text-gray-500 mt-1">Today</div>
+            </div>
+        </div>
+    </div>
+<?php endif; ?>
 
 <div class="row g-4 mb-8">
     <div class="col-12 col-lg-6">

@@ -8,50 +8,69 @@ $pageTitle = 'Udhar - Shop Management';
 
 $pdo = db();
 
-$pdo->exec("
-    CREATE TABLE IF NOT EXISTS udhar_customers (
-        id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-        name VARCHAR(120) NOT NULL,
-        phone VARCHAR(30) NULL,
-        amount DECIMAL(12,2) NOT NULL DEFAULT 0.00,
-        udhar_date DATE NOT NULL,
-        notes VARCHAR(255) NULL,
-        status ENUM('pending','cleared') NOT NULL DEFAULT 'pending',
-        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-        PRIMARY KEY (id),
-        KEY idx_udhar_status (status),
-        KEY idx_udhar_date (udhar_date),
-        KEY idx_udhar_phone (phone)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-");
+function udhar_ensure_ledger(PDO $pdo, int $udharId): void
+{
+    if ($udharId <= 0) {
+        return;
+    }
 
-$pdo->exec("
-    CREATE TABLE IF NOT EXISTS udhar_payments (
-        id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-        udhar_id BIGINT UNSIGNED NOT NULL,
-        amount DECIMAL(12,2) NOT NULL DEFAULT 0.00,
-        payment_date DATE NOT NULL,
-        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        PRIMARY KEY (id),
-        KEY idx_udhar_payments_udhar_id (udhar_id),
-        KEY idx_udhar_payments_date (payment_date),
-        CONSTRAINT fk_udhar_payments_udhar_id FOREIGN KEY (udhar_id) REFERENCES udhar_customers (id) ON UPDATE CASCADE ON DELETE CASCADE
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-");
+    try {
+        $stmt = $pdo->prepare('SELECT COUNT(*) FROM udhar_transactions WHERE udhar_id = :id');
+        $stmt->execute([':id' => $udharId]);
+        $cnt = (int) $stmt->fetchColumn();
+        if ($cnt > 0) {
+            return;
+        }
 
-$pdo->exec("
-    UPDATE udhar_customers c
-    LEFT JOIN (
-        SELECT udhar_id, COALESCE(SUM(amount), 0) AS paid_total
-        FROM udhar_payments
-        GROUP BY udhar_id
-    ) p ON p.udhar_id = c.id
-    SET c.status = CASE
-        WHEN (c.amount - COALESCE(p.paid_total, 0)) <= 0 THEN 'cleared'
-        ELSE 'pending'
-    END
-");
+        $stmt = $pdo->prepare('SELECT amount, udhar_date, notes FROM udhar_customers WHERE id = :id LIMIT 1');
+        $stmt->execute([':id' => $udharId]);
+        $row = $stmt->fetch();
+        if ($row) {
+            $amount = (float) ($row['amount'] ?? 0);
+            $date = (string) ($row['udhar_date'] ?? '');
+            $notes = (string) ($row['notes'] ?? '');
+            if ($amount > 0 && $date !== '') {
+                $ins = $pdo->prepare("
+                    INSERT INTO udhar_transactions (udhar_id, txn_date, txn_type, amount, notes)
+                    VALUES (:udhar_id, :txn_date, 'udhar', :amount, :notes)
+                ");
+                $ins->execute([
+                    ':udhar_id' => $udharId,
+                    ':txn_date' => $date,
+                    ':amount' => $amount,
+                    ':notes' => $notes !== '' ? $notes : null,
+                ]);
+            }
+        }
+
+        try {
+            $stmt = $pdo->prepare('SELECT payment_date, amount, created_at FROM udhar_payments WHERE udhar_id = :id ORDER BY payment_date ASC, id ASC');
+            $stmt->execute([':id' => $udharId]);
+            $payments = $stmt->fetchAll();
+            if ($payments) {
+                $ins = $pdo->prepare("
+                    INSERT INTO udhar_transactions (udhar_id, txn_date, txn_type, amount, notes, created_at)
+                    VALUES (:udhar_id, :txn_date, 'payment', :amount, NULL, :created_at)
+                ");
+                foreach ($payments as $p) {
+                    $pDate = (string) ($p['payment_date'] ?? '');
+                    $pAmount = (float) ($p['amount'] ?? 0);
+                    $createdAt = (string) ($p['created_at'] ?? '');
+                    if ($pDate !== '' && $pAmount > 0) {
+                        $ins->execute([
+                            ':udhar_id' => $udharId,
+                            ':txn_date' => $pDate,
+                            ':amount' => $pAmount,
+                            ':created_at' => $createdAt !== '' ? $createdAt : date('Y-m-d H:i:s'),
+                        ]);
+                    }
+                }
+            }
+        } catch (Throwable $e) {
+        }
+    } catch (Throwable $e) {
+    }
+}
 
 $tab = trim((string) ($_GET['tab'] ?? 'pending'));
 if (!in_array($tab, ['pending', 'cleared', 'all'], true)) {
@@ -63,28 +82,49 @@ $success = flash_get('success');
 $error = flash_get('error');
 
 $whereParts = [];
+$havingParts = [];
 $params = [];
-if ($tab !== 'all') {
-    $whereParts[] = 'c.status = :status';
-    $params[':status'] = $tab;
-}
 if ($q !== '') {
     $whereParts[] = '(c.name LIKE :q OR c.phone LIKE :q)';
     $params[':q'] = '%' . $q . '%';
 }
 $where = $whereParts ? ('WHERE ' . implode(' AND ', $whereParts)) : '';
+if ($tab === 'pending') {
+    $havingParts[] = '(balance > 0)';
+} elseif ($tab === 'cleared') {
+    $havingParts[] = '(balance <= 0)';
+}
+$having = $havingParts ? ('HAVING ' . implode(' AND ', $havingParts)) : '';
 
 $stmt = $pdo->prepare("
     SELECT
-        c.id, c.name, c.phone, c.amount, c.udhar_date, c.notes, c.status, c.created_at,
-        COALESCE(SUM(p.amount), 0) AS paid_total
+        c.id,
+        c.name,
+        c.phone,
+        c.udhar_date,
+        c.notes,
+        c.created_at,
+        COALESCE(SUM(CASE WHEN t.txn_type = 'udhar' THEN t.amount ELSE 0 END), 0) AS udhar_total,
+        COALESCE(SUM(CASE WHEN t.txn_type = 'payment' THEN t.amount ELSE 0 END), 0) AS paid_total,
+        (
+            COALESCE(SUM(CASE WHEN t.txn_type = 'udhar' THEN t.amount ELSE 0 END), 0)
+            - COALESCE(SUM(CASE WHEN t.txn_type = 'payment' THEN t.amount ELSE 0 END), 0)
+        ) AS balance
     FROM udhar_customers c
-    LEFT JOIN udhar_payments p ON p.udhar_id = c.id
+    LEFT JOIN udhar_transactions t ON t.udhar_id = c.id
     {$where}
     GROUP BY c.id
+    {$having}
     ORDER BY c.created_at DESC, c.id DESC
     LIMIT 200
 ");
+$stmt->execute($params);
+$rows = $stmt->fetchAll();
+
+foreach ($rows as $r) {
+    udhar_ensure_ledger($pdo, (int) ($r['id'] ?? 0));
+}
+
 $stmt->execute($params);
 $rows = $stmt->fetchAll();
 
@@ -92,9 +132,9 @@ $totalAmount = 0.0;
 $totalPaid = 0.0;
 $totalRemaining = 0.0;
 foreach ($rows as $r) {
-    $amount = (float) ($r['amount'] ?? 0);
+    $amount = (float) ($r['udhar_total'] ?? 0);
     $paid = (float) ($r['paid_total'] ?? 0);
-    $remaining = $amount - $paid;
+    $remaining = (float) ($r['balance'] ?? 0);
     if ($remaining < 0) {
         $remaining = 0.0;
     }
@@ -189,13 +229,13 @@ require_once __DIR__ . '/../includes/sidebar.php';
                 <tbody>
                 <?php foreach ($rows as $r): ?>
                     <?php
-                    $amount = (float) $r['amount'];
+                    $amount = (float) $r['udhar_total'];
                     $paid = (float) $r['paid_total'];
-                    $remaining = $amount - $paid;
+                    $remaining = (float) ($r['balance'] ?? 0);
                     if ($remaining < 0) {
                         $remaining = 0.0;
                     }
-                    $status = (string) ($r['status'] ?? 'pending');
+                    $status = $remaining <= 0 ? 'cleared' : 'pending';
                     ?>
                     <tr>
                         <td>
@@ -230,4 +270,3 @@ require_once __DIR__ . '/../includes/sidebar.php';
 </div>
 
 <?php require_once __DIR__ . '/../includes/footer.php'; ?>
-
