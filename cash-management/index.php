@@ -118,7 +118,12 @@ function expenses_total(PDO $pdo, string $date): float
 function dealer_payments_total(PDO $pdo, string $date): float
 {
     try {
-        $stmt = $pdo->prepare("SELECT COALESCE(SUM(amount), 0) FROM dealer_payments WHERE payment_date = :d");
+        $stmt = $pdo->prepare("
+            SELECT COALESCE(SUM(amount), 0)
+            FROM dealer_payments
+            WHERE payment_date = :d
+              AND entry_type IN ('advance_payment', 'dealer_payment')
+        ");
         $stmt->execute([':d' => $date]);
         return (float) $stmt->fetchColumn();
     } catch (Throwable $e) {

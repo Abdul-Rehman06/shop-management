@@ -182,7 +182,12 @@ if ($canViewProfit) {
 }
 
 try {
-    $stmt = $pdo->prepare("SELECT COALESCE(SUM(amount), 0) FROM dealer_payments WHERE payment_date >= :from AND payment_date <= :to");
+    $stmt = $pdo->prepare("
+        SELECT COALESCE(SUM(amount), 0)
+        FROM dealer_payments
+        WHERE payment_date >= :from AND payment_date <= :to
+          AND entry_type IN ('advance_payment', 'dealer_payment')
+    ");
     $stmt->execute([':from' => $fromDate, ':to' => $toDate]);
     $rangeDealerPayments = (float) $stmt->fetchColumn();
 } catch (Throwable $e) {
@@ -341,12 +346,14 @@ try {
         SELECT COALESCE(SUM(amount), 0)
         FROM dealer_payments
         WHERE payment_date = CURDATE()
+          AND entry_type IN ('advance_payment', 'dealer_payment')
     ")->fetchColumn();
     $dealerPaymentsMonthTotal = (float) $pdo->query("
         SELECT COALESCE(SUM(amount), 0)
         FROM dealer_payments
         WHERE payment_date >= DATE_FORMAT(CURDATE(), '%Y-%m-01')
           AND payment_date <= LAST_DAY(CURDATE())
+          AND entry_type IN ('advance_payment', 'dealer_payment')
     ")->fetchColumn();
 
     $stmt = $pdo->query("
@@ -354,6 +361,7 @@ try {
         FROM dealer_payments
         WHERE payment_date >= DATE_FORMAT(CURDATE(), '%Y-%m-01')
           AND payment_date <= LAST_DAY(CURDATE())
+          AND entry_type IN ('advance_payment', 'dealer_payment')
         GROUP BY network
     ");
     foreach ($stmt->fetchAll() as $r) {
@@ -383,6 +391,52 @@ try {
     }
 } catch (Throwable $e) {
 }
+
+$dealerAdvanceOutstanding = 0.0;
+$dealerCreditOutstanding = 0.0;
+$dealerOutstandingTotal = 0.0;
+$dealerWiseSummary = [];
+try {
+    $stmt = $pdo->query("
+        SELECT
+            dealer_name,
+            network,
+            COALESCE(SUM(CASE WHEN entry_type = 'advance_payment' THEN amount ELSE 0 END), 0) AS adv_total,
+            COALESCE(SUM(CASE WHEN entry_type = 'dealer_payment' THEN amount ELSE 0 END), 0) AS pay_total,
+            COALESCE(SUM(CASE WHEN entry_type = 'load_received_against_advance' THEN amount ELSE 0 END), 0) AS load_total,
+            COALESCE(SUM(CASE WHEN entry_type = 'credit_load_received' THEN amount ELSE 0 END), 0) AS credit_total
+        FROM dealer_payments
+        GROUP BY dealer_name, network
+        ORDER BY network ASC, dealer_name ASC
+    ");
+    foreach ($stmt->fetchAll() as $r) {
+        $adv = (float) ($r['adv_total'] ?? 0);
+        $pay = (float) ($r['pay_total'] ?? 0);
+        $load = (float) ($r['load_total'] ?? 0);
+        $credit = (float) ($r['credit_total'] ?? 0);
+        $bal = ($adv + $pay) - $load - $credit;
+        if ($bal >= 0) {
+            $dealerAdvanceOutstanding += $bal;
+        } else {
+            $dealerCreditOutstanding += abs($bal);
+        }
+        $dealerOutstandingTotal += abs($bal);
+        $dealerWiseSummary[] = [
+            'dealer_name' => (string) ($r['dealer_name'] ?? ''),
+            'network' => (string) ($r['network'] ?? ''),
+            'balance' => $bal,
+        ];
+    }
+} catch (Throwable $e) {
+}
+
+$dealerWiseSummaryTop = $dealerWiseSummary;
+usort($dealerWiseSummaryTop, static function (array $a, array $b): int {
+    $ab = abs((float) ($a['balance'] ?? 0));
+    $bb = abs((float) ($b['balance'] ?? 0));
+    return $bb <=> $ab;
+});
+$dealerWiseSummaryTop = array_slice($dealerWiseSummaryTop, 0, 8);
 
 $cashOpeningToday = 0.0;
 $cashReceivedToday = 0.0;
@@ -949,18 +1003,55 @@ $extraHead = '<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/char
             <div class="absolute -right-6 -top-6 w-32 h-32 bg-blue-50 rounded-full group-hover:scale-150 transition-transform duration-700 ease-out z-0 opacity-50"></div>
             <div class="relative z-10">
                 <div class="flex items-center justify-between mb-6">
-                    <div class="text-xs font-bold text-gray-500 uppercase tracking-widest">Dealer Payments</div>
+                    <div class="text-xs font-bold text-gray-500 uppercase tracking-widest">Dealer Balances</div>
                     <div class="p-2.5 bg-blue-100 text-blue-600 rounded-xl group-hover:bg-blue-200 transition-colors"><i data-lucide="users" class="w-5 h-5"></i></div>
                 </div>
-                <div class="text-3xl font-extrabold text-gray-900 tracking-tight">Rs <?= money($dealerPaymentsMonthTotal) ?></div>
-                <div class="text-sm font-medium text-gray-500 mt-2 bg-gray-50 px-3 py-1.5 rounded-lg inline-block border border-gray-100 mb-2">This month • Payable: Rs <?= money($dealerRemainingPayableMonth) ?></div>
-                <div class="text-xs font-medium text-gray-500 flex flex-wrap gap-2">
-                    <span class="bg-red-50 text-red-600 px-2.5 py-1 rounded-lg border border-red-100">Jazz: <?= money($dealerPaymentsByNetwork['Jazz'] ?? 0) ?></span>
-                    <span class="bg-green-50 text-green-600 px-2.5 py-1 rounded-lg border border-green-100">Zong: <?= money($dealerPaymentsByNetwork['Zong'] ?? 0) ?></span>
-                    <span class="bg-cyan-50 text-cyan-600 px-2.5 py-1 rounded-lg border border-cyan-100">Telenor: <?= money($dealerPaymentsByNetwork['Telenor'] ?? 0) ?></span>
-                    <span class="bg-orange-50 text-orange-600 px-2.5 py-1 rounded-lg border border-orange-100">Ufone: <?= money($dealerPaymentsByNetwork['Ufone'] ?? 0) ?></span>
+                <div class="text-3xl font-extrabold text-gray-900 tracking-tight">Rs <?= money($dealerOutstandingTotal) ?></div>
+                <div class="text-sm font-medium text-gray-500 mt-2 bg-gray-50 px-3 py-1.5 rounded-lg inline-block border border-gray-100 mb-2">
+                    Advance: Rs <?= money($dealerAdvanceOutstanding) ?> • Credit: Rs <?= money($dealerCreditOutstanding) ?>
                 </div>
+                <div class="text-xs font-medium text-gray-500 flex flex-wrap gap-2 mb-2">
+                    <span class="bg-gray-50 text-gray-700 px-2.5 py-1 rounded-lg border border-gray-100">This month cash-out: Rs <?= money($dealerPaymentsMonthTotal) ?></span>
+                    <span class="bg-gray-50 text-gray-700 px-2.5 py-1 rounded-lg border border-gray-100">Payable: Rs <?= money($dealerRemainingPayableMonth) ?></span>
+                </div>
+                <a class="inline-flex items-center gap-2 text-sm font-semibold text-brand-600 hover:text-brand-700" href="<?= h(app_url('dealer-payments/index.php')) ?>">
+                    View Dealer Ledger <i data-lucide="arrow-right" class="w-4 h-4"></i>
+                </a>
             </div>
+        </div>
+    </div>
+
+    <div class="glass-card rounded-3xl p-6 mb-10 animate-slide-up stagger-5">
+        <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 mb-4">
+            <div>
+                <div class="text-xs font-bold text-gray-500 uppercase tracking-widest">Dealer Wise Summary</div>
+                <div class="text-sm font-medium text-gray-600">Top balances (advance/credit)</div>
+            </div>
+            <a class="btn btn-outline-secondary btn-sm" href="<?= h(app_url('dealer-payments/index.php')) ?>">Open Ledger</a>
+        </div>
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0 custom-table">
+                <thead class="table-light">
+                <tr>
+                    <th>Dealer</th>
+                    <th>Network</th>
+                    <th class="text-end">Balance</th>
+                </tr>
+                </thead>
+                <tbody>
+                <?php foreach ($dealerWiseSummaryTop as $r): ?>
+                    <?php $bal = (float) ($r['balance'] ?? 0); ?>
+                    <tr>
+                        <td class="fw-semibold"><?= h((string) ($r['dealer_name'] ?? '')) ?></td>
+                        <td><?= h((string) ($r['network'] ?? '')) ?></td>
+                        <td class="text-end fw-bold <?= $bal >= 0 ? 'text-success' : 'text-danger' ?>"><?= h(money($bal)) ?></td>
+                    </tr>
+                <?php endforeach; ?>
+                <?php if (!$dealerWiseSummaryTop): ?>
+                    <tr><td colspan="3" class="text-center text-muted py-4">No dealer ledger data yet.</td></tr>
+                <?php endif; ?>
+                </tbody>
+            </table>
         </div>
     </div>
 

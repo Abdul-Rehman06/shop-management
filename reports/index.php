@@ -11,6 +11,26 @@ $pdo = db();
 $filters = report_filters_from_request();
 $modules = report_modules();
 $networks = report_load_networks($pdo);
+$dealerNames = [];
+try {
+    $stmt = $pdo->query("SELECT dealer_name FROM dealers WHERE status = 'active' ORDER BY dealer_name ASC");
+    $dealerNames = array_values(array_filter(array_map(static fn (array $r): string => (string) ($r['dealer_name'] ?? ''), $stmt->fetchAll())));
+} catch (Throwable $e) {
+    $dealerNames = [];
+}
+$adminRows = [];
+try {
+    $adminRows = $pdo->query("SELECT id, name, role FROM admins ORDER BY role ASC, name ASC, id ASC")->fetchAll();
+} catch (Throwable $e) {
+    $adminRows = [];
+}
+$dealerTxnTypes = [
+    '' => 'All',
+    'advance_payment' => 'Advance Payment to Dealer',
+    'load_received_against_advance' => 'Load Received Against Advance',
+    'credit_load_received' => 'Credit Load Received',
+    'dealer_payment' => 'Dealer Payment',
+];
 
 $canViewProfit = app_can_view_profit();
 if (!$canViewProfit && in_array($filters['module'], ['sales', 'load', 'load_txn'], true)) {
@@ -140,6 +160,15 @@ if ($filters['network'] !== '') {
 if ($filters['type'] !== '') {
     $query['type'] = $filters['type'];
 }
+if (($filters['dealer'] ?? '') !== '') {
+    $query['dealer'] = (string) $filters['dealer'];
+}
+if (($filters['txn_type'] ?? '') !== '') {
+    $query['txn_type'] = (string) $filters['txn_type'];
+}
+if ((int) ($filters['created_by'] ?? 0) > 0) {
+    $query['created_by'] = (int) $filters['created_by'];
+}
 
 $baseQueryString = http_build_query($query);
 
@@ -216,6 +245,37 @@ require_once __DIR__ . '/../includes/sidebar.php';
             <div>
                 <button class="btn btn-gradient w-full rounded-xl py-2.5 shadow-md">Apply Filters</button>
             </div>
+
+            <?php if (in_array($filters['module'], ['dealer_ledger', 'dealer_payments'], true)): ?>
+                <div>
+                    <label class="form-label text-xs uppercase tracking-wider text-gray-500 mb-1" for="dealer">Dealer</label>
+                    <select class="form-select bg-gray-50 border-0 shadow-sm rounded-xl" id="dealer" name="dealer">
+                        <option value="">All</option>
+                        <?php foreach ($dealerNames as $d): ?>
+                            <option value="<?= h($d) ?>" <?= (string) ($filters['dealer'] ?? '') === $d ? 'selected' : '' ?>><?= h($d) ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+                <div>
+                    <label class="form-label text-xs uppercase tracking-wider text-gray-500 mb-1" for="txn_type">Transaction Type</label>
+                    <select class="form-select bg-gray-50 border-0 shadow-sm rounded-xl" id="txn_type" name="txn_type">
+                        <?php foreach ($dealerTxnTypes as $k => $label): ?>
+                            <option value="<?= h($k) ?>" <?= (string) ($filters['txn_type'] ?? '') === $k ? 'selected' : '' ?>><?= h($label) ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+                <div>
+                    <label class="form-label text-xs uppercase tracking-wider text-gray-500 mb-1" for="created_by">User</label>
+                    <select class="form-select bg-gray-50 border-0 shadow-sm rounded-xl" id="created_by" name="created_by">
+                        <option value="0">All</option>
+                        <?php foreach ($adminRows as $a): ?>
+                            <option value="<?= (int) $a['id'] ?>" <?= (int) ($filters['created_by'] ?? 0) === (int) $a['id'] ? 'selected' : '' ?>>
+                                <?= h((string) ($a['name'] ?? '')) ?><?= ((string) ($a['role'] ?? '') !== '' ? (' • ' . (string) $a['role']) : '') ?>
+                            </option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+            <?php endif; ?>
 
             <?php if ($filters['module'] === 'load'): ?>
                 <div>

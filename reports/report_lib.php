@@ -14,6 +14,7 @@ function report_modules(): array
         'bank' => 'Bank Transfer',
         'expenses' => 'Expenses',
         'sales' => 'Sales',
+        'dealer_ledger' => 'Dealer Statement',
         'dealer_payments' => 'Dealer Payments',
         'udhar' => 'Udhar Ledger',
         'credit' => 'Credit (Advance)',
@@ -66,6 +67,9 @@ function report_filters_from_request(): array
 
     $network = trim((string) ($_GET['network'] ?? ''));
     $type = trim((string) ($_GET['type'] ?? ''));
+    $dealer = trim((string) ($_GET['dealer'] ?? ''));
+    $txnType = trim((string) ($_GET['txn_type'] ?? ''));
+    $createdBy = (int) ($_GET['created_by'] ?? 0);
 
     return [
         'module' => $module,
@@ -73,6 +77,9 @@ function report_filters_from_request(): array
         'to' => $to,
         'network' => $network,
         'type' => $type,
+        'dealer' => $dealer,
+        'txn_type' => $txnType,
+        'created_by' => $createdBy,
         'range' => $range,
     ];
 }
@@ -165,14 +172,138 @@ function report_fetch(PDO $pdo, array $filters): array
         ];
     }
 
-    if ($module === 'dealer_payments') {
+    if ($module === 'dealer_ledger') {
+        $dealer = trim((string) ($filters['dealer'] ?? ''));
+        $txnType = trim((string) ($filters['txn_type'] ?? ''));
+        $createdBy = (int) ($filters['created_by'] ?? 0);
+
+        $whereParts = ['dp.payment_date >= :from', 'dp.payment_date <= :to'];
+        $params = [':from' => $from, ':to' => $to];
+
+        if ($dealer !== '') {
+            $whereParts[] = 'dp.dealer_name = :dealer';
+            $params[':dealer'] = $dealer;
+        }
+        if ($network !== '') {
+            $whereParts[] = 'dp.network = :network';
+            $params[':network'] = $network;
+        }
+        if ($txnType !== '') {
+            $whereParts[] = 'dp.entry_type = :entry_type';
+            $params[':entry_type'] = $txnType;
+        }
+        if ($createdBy > 0) {
+            $whereParts[] = 'dp.created_by = :created_by';
+            $params[':created_by'] = $createdBy;
+        }
+
+        $where = 'WHERE ' . implode(' AND ', $whereParts);
+
         $stmt = $pdo->prepare("
-            SELECT payment_date, dealer_name, network, amount, notes, created_at
-            FROM dealer_payments
-            WHERE payment_date >= :from AND payment_date <= :to
-            ORDER BY payment_date ASC, id ASC
+            SELECT dp.payment_date, dp.dealer_name, dp.network, dp.entry_type, dp.amount, dp.description, dp.notes, dp.created_at,
+                   a.name AS created_by_name
+            FROM dealer_payments dp
+            LEFT JOIN admins a ON a.id = dp.created_by
+            {$where}
+            ORDER BY dp.dealer_name ASC, dp.payment_date ASC, dp.id ASC
         ");
-        $stmt->execute([':from' => $from, ':to' => $to]);
+        $stmt->execute($params);
+        $rows = $stmt->fetchAll();
+
+        $runningByDealer = [];
+        $totalAdvance = 0.0;
+        $totalCredit = 0.0;
+        $totalLoad = 0.0;
+        $totalPayment = 0.0;
+
+        $outRows = [];
+        foreach ($rows as $r) {
+            $d = (string) ($r['dealer_name'] ?? '');
+            $type = trim((string) ($r['entry_type'] ?? ''));
+            if ($type === '') {
+                $type = 'dealer_payment';
+            }
+            $amt = (float) ($r['amount'] ?? 0);
+
+            $adv = $type === 'advance_payment' ? $amt : 0.0;
+            $credit = $type === 'credit_load_received' ? $amt : 0.0;
+            $load = $type === 'load_received_against_advance' ? $amt : 0.0;
+            $pay = $type === 'dealer_payment' ? $amt : 0.0;
+
+            $totalAdvance += $adv;
+            $totalCredit += $credit;
+            $totalLoad += $load;
+            $totalPayment += $pay;
+
+            $runningByDealer[$d] = (float) ($runningByDealer[$d] ?? 0.0);
+            $runningByDealer[$d] += ($adv + $pay) - ($load + $credit);
+
+            $outRows[] = [
+                (string) ($r['payment_date'] ?? ''),
+                $d,
+                (string) ($r['network'] ?? ''),
+                $type,
+                (string) ($r['description'] ?? ''),
+                $adv > 0 ? number_format($adv, 2, '.', '') : '',
+                $credit > 0 ? number_format($credit, 2, '.', '') : '',
+                $load > 0 ? number_format($load, 2, '.', '') : '',
+                $pay > 0 ? number_format($pay, 2, '.', '') : '',
+                number_format((float) $runningByDealer[$d], 2, '.', ''),
+                (string) ($r['created_by_name'] ?? ''),
+                (string) ($r['notes'] ?? ''),
+            ];
+        }
+
+        $netBalance = ($totalAdvance + $totalPayment) - ($totalLoad + $totalCredit);
+
+        return [
+            'headers' => ['Date', 'Dealer', 'Network', 'Transaction Type', 'Description', 'Advance', 'Credit', 'Load Received', 'Payment Sent', 'Balance', 'Created By', 'Remarks'],
+            'rows' => $outRows,
+            'summary' => [
+                'Total Dealer Advances' => number_format($totalAdvance, 2),
+                'Total Dealer Credit' => number_format($totalCredit, 2),
+                'Total Load Received' => number_format($totalLoad, 2),
+                'Total Dealer Payments' => number_format($totalPayment, 2),
+                'Net Balance' => number_format($netBalance, 2),
+            ],
+        ];
+    }
+
+    if ($module === 'dealer_payments') {
+        $dealer = trim((string) ($filters['dealer'] ?? ''));
+        $createdBy = (int) ($filters['created_by'] ?? 0);
+
+        $whereParts = [
+            'dp.payment_date >= :from',
+            'dp.payment_date <= :to',
+            "dp.entry_type IN ('advance_payment','dealer_payment')",
+        ];
+        $params = [':from' => $from, ':to' => $to];
+
+        if ($dealer !== '') {
+            $whereParts[] = 'dp.dealer_name = :dealer';
+            $params[':dealer'] = $dealer;
+        }
+        if ($network !== '') {
+            $whereParts[] = 'dp.network = :network';
+            $params[':network'] = $network;
+        }
+        if ($createdBy > 0) {
+            $whereParts[] = 'dp.created_by = :created_by';
+            $params[':created_by'] = $createdBy;
+        }
+
+        $where = 'WHERE ' . implode(' AND ', $whereParts);
+
+        $stmt = $pdo->prepare("
+            SELECT dp.payment_date, dp.dealer_name, dp.network, dp.entry_type, dp.amount, dp.description, dp.notes, dp.created_at,
+                   a.name AS created_by_name
+            FROM dealer_payments dp
+            LEFT JOIN admins a ON a.id = dp.created_by
+            {$where}
+            ORDER BY dp.payment_date ASC, dp.id ASC
+        ");
+        $stmt->execute($params);
         $rows = $stmt->fetchAll();
 
         $total = 0.0;
@@ -181,14 +312,17 @@ function report_fetch(PDO $pdo, array $filters): array
         }
 
         return [
-            'headers' => ['Date', 'Dealer', 'Network', 'Amount', 'Notes', 'Created At'],
+            'headers' => ['Date', 'Dealer', 'Network', 'Type', 'Amount', 'Description', 'Remarks', 'Created By', 'Created At'],
             'rows' => array_map(static function (array $r): array {
                 return [
                     (string) ($r['payment_date'] ?? ''),
                     (string) ($r['dealer_name'] ?? ''),
                     (string) ($r['network'] ?? ''),
+                    (string) ($r['entry_type'] ?? ''),
                     number_format((float) ($r['amount'] ?? 0), 2, '.', ''),
+                    (string) ($r['description'] ?? ''),
                     (string) ($r['notes'] ?? ''),
+                    (string) ($r['created_by_name'] ?? ''),
                     (string) ($r['created_at'] ?? ''),
                 ];
             }, $rows),

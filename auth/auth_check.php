@@ -306,13 +306,48 @@ function app_ensure_schema(PDO $pdo): void
                 payment_date DATE NOT NULL,
                 amount DECIMAL(12,2) NOT NULL DEFAULT 0.00,
                 notes VARCHAR(255) NULL,
+                entry_type VARCHAR(40) NOT NULL DEFAULT 'dealer_payment',
+                description VARCHAR(255) NULL,
+                created_by INT UNSIGNED NULL,
                 created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 PRIMARY KEY (id),
                 KEY idx_dealer_payments_date (payment_date),
                 KEY idx_dealer_payments_network (network),
-                KEY idx_dealer_payments_dealer (dealer_name)
+                KEY idx_dealer_payments_dealer (dealer_name),
+                KEY idx_dealer_payments_entry_type (entry_type),
+                KEY idx_dealer_payments_created_by (created_by),
+                CONSTRAINT fk_dealer_payments_created_by FOREIGN KEY (created_by) REFERENCES admins(id) ON UPDATE CASCADE ON DELETE SET NULL
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
         ");
+    } catch (Throwable $e) {
+    }
+
+    try {
+        $stmt = $pdo->query("SHOW COLUMNS FROM dealer_payments LIKE 'entry_type'");
+        $has = (bool) $stmt->fetchColumn();
+        if (!$has) {
+            $pdo->exec("ALTER TABLE dealer_payments ADD COLUMN entry_type VARCHAR(40) NOT NULL DEFAULT 'dealer_payment'");
+            $pdo->exec("ALTER TABLE dealer_payments ADD KEY idx_dealer_payments_entry_type (entry_type)");
+        }
+    } catch (Throwable $e) {
+    }
+
+    try {
+        $stmt = $pdo->query("SHOW COLUMNS FROM dealer_payments LIKE 'description'");
+        $has = (bool) $stmt->fetchColumn();
+        if (!$has) {
+            $pdo->exec("ALTER TABLE dealer_payments ADD COLUMN description VARCHAR(255) NULL");
+        }
+    } catch (Throwable $e) {
+    }
+
+    try {
+        $stmt = $pdo->query("SHOW COLUMNS FROM dealer_payments LIKE 'created_by'");
+        $has = (bool) $stmt->fetchColumn();
+        if (!$has) {
+            $pdo->exec("ALTER TABLE dealer_payments ADD COLUMN created_by INT UNSIGNED NULL");
+            $pdo->exec("ALTER TABLE dealer_payments ADD KEY idx_dealer_payments_created_by (created_by)");
+        }
     } catch (Throwable $e) {
     }
 

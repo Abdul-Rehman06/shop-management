@@ -65,6 +65,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         $opening = (float) ($row['opening'] ?? 0);
         $purchased = (float) ($row['purchased'] ?? 0);
+        $dealerPurchased = 0.0;
+        try {
+            $stmt = $pdo->prepare("
+                SELECT COALESCE(SUM(amount), 0)
+                FROM dealer_payments
+                WHERE payment_date = :d
+                  AND network = :network
+                  AND entry_type IN ('load_received_against_advance', 'credit_load_received')
+            ");
+            $stmt->execute([':d' => $date, ':network' => (string) $network]);
+            $dealerPurchased = (float) $stmt->fetchColumn();
+        } catch (Throwable $e) {
+            $dealerPurchased = 0.0;
+        }
+        if ($purchased < $dealerPurchased) {
+            $purchased = $dealerPurchased;
+        }
         $closing = (float) ($row['closing'] ?? 0);
         $sold = $opening + $purchased - $closing;
         $profit = (float) ($row['profit'] ?? 0);
