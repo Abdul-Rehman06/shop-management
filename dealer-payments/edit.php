@@ -6,6 +6,13 @@ require_once __DIR__ . '/../includes/app.php';
 
 $pdo = db();
 app_require_owner_access();
+$paymentSourceAccounts = $pdo->query("
+    SELECT id, account_name, account_type
+    FROM accounts
+    WHERE status = 'active'
+      AND account_type IN ('cash', 'easypaisa', 'jazzcash', 'bank')
+    ORDER BY FIELD(account_type, 'cash', 'easypaisa', 'jazzcash', 'bank'), account_name ASC
+")->fetchAll();
 
 $id = (int) ($_GET['id'] ?? 0);
 if ($id <= 0) {
@@ -35,8 +42,68 @@ $date = (string) $row['payment_date'];
 $entryType = (string) ($row['entry_type'] ?? 'dealer_payment');
 $amount = (string) $row['amount'];
 $description = (string) ($row['description'] ?? '');
+$paymentSourceAccountId = (int) ($row['payment_source_account_id'] ?? 0);
+$linkedWalletTxnId = (int) ($row['linked_wallet_txn_id'] ?? 0);
 $notes = (string) ($row['notes'] ?? '');
 $error = '';
+
+$syncDealerPaymentWallet = static function (PDO $pdo, int $dealerPaymentId, string $entryType, int $paymentSourceAccountId, string $date, string $dealer, string $network, float $amount, ?int $existingWalletTxnId = null): ?int {
+    $needsWalletTxn = in_array($entryType, ['advance_payment', 'dealer_payment'], true) && $paymentSourceAccountId > 0 && $amount > 0;
+    if (!$needsWalletTxn) {
+        if (($existingWalletTxnId ?? 0) > 0) {
+            $stmt = $pdo->prepare('DELETE FROM wallet_transactions WHERE id = :id');
+            $stmt->execute([':id' => $existingWalletTxnId]);
+        }
+        return null;
+    }
+
+    $account = wallet_account($pdo, $paymentSourceAccountId);
+    if (!$account) {
+        throw new RuntimeException('Invalid payment source account.');
+    }
+
+    $payload = [
+        ':account_id' => $paymentSourceAccountId,
+        ':date' => $date,
+        ':customer_name' => $dealer,
+        ':number' => $network,
+        ':transaction_id' => 'DEALER-' . $dealerPaymentId,
+        ':amount' => $amount,
+        ':remarks' => 'Dealer payment #' . $dealerPaymentId . ' - ' . $dealer . ' (' . $network . ')',
+    ];
+
+    if (($existingWalletTxnId ?? 0) > 0) {
+        $payload[':id'] = $existingWalletTxnId;
+        $stmt = $pdo->prepare("
+            UPDATE wallet_transactions
+            SET account_id = :account_id,
+                date = :date,
+                customer_name = :customer_name,
+                number = :number,
+                transaction_id = :transaction_id,
+                type = 'sending',
+                amount = :amount,
+                charges = 0,
+                commission_method = 'separate_cash',
+                account_amount = :amount,
+                payment_status = 'completed',
+                completed_at = NOW(),
+                remarks = :remarks
+            WHERE id = :id
+        ");
+        $stmt->execute($payload);
+        return $existingWalletTxnId;
+    }
+
+    $stmt = $pdo->prepare("
+        INSERT INTO wallet_transactions
+            (account_id, date, customer_name, number, transaction_id, type, amount, charges, commission_method, account_amount, payment_status, completed_at, remarks)
+        VALUES
+            (:account_id, :date, :customer_name, :number, :transaction_id, 'sending', :amount, 0, 'separate_cash', :amount, 'completed', NOW(), :remarks)
+    ");
+    $stmt->execute($payload);
+    return (int) $pdo->lastInsertId();
+};
 
 $dealerMap = [];
 try {
@@ -70,6 +137,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $date = trim((string) ($_POST['payment_date'] ?? ''));
     $entryType = trim((string) ($_POST['entry_type'] ?? 'dealer_payment'));
     $amount = trim((string) ($_POST['amount'] ?? ''));
+    $paymentSourceAccountId = (int) ($_POST['payment_source_account_id'] ?? 0);
     $description = trim((string) ($_POST['description'] ?? ''));
     $notes = trim((string) ($_POST['notes'] ?? ''));
 
@@ -87,39 +155,58 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $error = 'Date is required.';
     } elseif ($amount === '' || !is_numeric($amount) || (float) $amount <= 0) {
         $error = 'Amount must be a positive number.';
+    } elseif (in_array($entryType, ['advance_payment', 'dealer_payment'], true) && $paymentSourceAccountId <= 0) {
+        $error = 'Please select payment source.';
     } else {
         $before = $row;
+        $pdo->beginTransaction();
+        try {
+            $stmt = $pdo->prepare("
+                UPDATE dealer_payments
+                SET dealer_name = :dealer_name,
+                    network = :network,
+                    payment_date = :payment_date,
+                    amount = :amount,
+                    notes = :notes,
+                    entry_type = :entry_type,
+                    description = :description,
+                    payment_source_account_id = :payment_source_account_id
+                WHERE id = :id
+            ");
+            $stmt->execute([
+                ':dealer_name' => $dealer,
+                ':network' => $network,
+                ':payment_date' => $date,
+                ':amount' => (float) $amount,
+                ':notes' => $notes !== '' ? $notes : null,
+                ':entry_type' => $entryType,
+                ':description' => $description !== '' ? $description : null,
+                ':payment_source_account_id' => $paymentSourceAccountId > 0 ? $paymentSourceAccountId : null,
+                ':id' => $id,
+            ]);
 
-        $stmt = $pdo->prepare("
-            UPDATE dealer_payments
-            SET dealer_name = :dealer_name,
-                network = :network,
-                payment_date = :payment_date,
-                amount = :amount,
-                notes = :notes,
-                entry_type = :entry_type,
-                description = :description
-            WHERE id = :id
-        ");
-        $stmt->execute([
-            ':dealer_name' => $dealer,
-            ':network' => $network,
-            ':payment_date' => $date,
-            ':amount' => (float) $amount,
-            ':notes' => $notes !== '' ? $notes : null,
-            ':entry_type' => $entryType,
-            ':description' => $description !== '' ? $description : null,
-            ':id' => $id,
-        ]);
+            $walletTxnId = $syncDealerPaymentWallet($pdo, $id, $entryType, $paymentSourceAccountId, $date, $dealer, $network, (float) $amount, $linkedWalletTxnId > 0 ? $linkedWalletTxnId : null);
+            $stmt = $pdo->prepare("UPDATE dealer_payments SET linked_wallet_txn_id = :linked_wallet_txn_id WHERE id = :id");
+            $stmt->execute([
+                ':linked_wallet_txn_id' => $walletTxnId,
+                ':id' => $id,
+            ]);
 
-        $stmt = $pdo->prepare("SELECT * FROM dealer_payments WHERE id = :id LIMIT 1");
-        $stmt->execute([':id' => $id]);
-        $after = $stmt->fetch() ?: null;
+            $stmt = $pdo->prepare("SELECT * FROM dealer_payments WHERE id = :id LIMIT 1");
+            $stmt->execute([':id' => $id]);
+            $after = $stmt->fetch() ?: null;
 
-        app_audit_log('dealer_payments', $id, 'edit', is_array($before) ? $before : null, is_array($after) ? $after : null);
+            app_audit_log('dealer_payments', $id, 'edit', is_array($before) ? $before : null, is_array($after) ? $after : null);
+            $pdo->commit();
 
-        flash_set('success', 'Dealer entry updated.');
-        app_redirect('dealer-payments/index.php?dealer=' . urlencode($dealer) . '&from=' . urlencode(date('Y-m-01')) . '&to=' . urlencode(date('Y-m-d')));
+            flash_set('success', 'Dealer entry updated.');
+            app_redirect('dealer-payments/index.php?dealer=' . urlencode($dealer) . '&from=' . urlencode(date('Y-m-01')) . '&to=' . urlencode(date('Y-m-d')));
+        } catch (Throwable $e) {
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            $error = 'Could not update dealer entry.';
+        }
     }
 }
 
@@ -173,6 +260,17 @@ require_once __DIR__ . '/../includes/sidebar.php';
             <div class="col-12 col-md-4">
                 <label class="form-label" for="amount">Amount</label>
                 <input class="form-control" type="number" step="0.01" id="amount" name="amount" value="<?= h($amount) ?>" required>
+            </div>
+            <div class="col-12 col-md-8">
+                <label class="form-label" for="payment_source_account_id">Payment Source</label>
+                <select class="form-select" id="payment_source_account_id" name="payment_source_account_id">
+                    <option value="0">No account deduction</option>
+                    <?php foreach ($paymentSourceAccounts as $acc): ?>
+                        <option value="<?= (int) ($acc['id'] ?? 0) ?>" <?= (int) ($acc['id'] ?? 0) === $paymentSourceAccountId ? 'selected' : '' ?>>
+                            <?= h((string) ($acc['account_name'] ?? '')) ?> (<?= h((string) ($acc['account_type'] ?? '')) ?>)
+                        </option>
+                    <?php endforeach; ?>
+                </select>
             </div>
             <div class="col-12 col-md-8">
                 <label class="form-label" for="description">Description</label>

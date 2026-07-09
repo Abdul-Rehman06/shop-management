@@ -85,8 +85,9 @@ $whereParts = [];
 $havingParts = [];
 $params = [];
 if ($q !== '') {
-    $whereParts[] = '(c.name LIKE :q OR c.phone LIKE :q)';
-    $params[':q'] = '%' . $q . '%';
+    $like = '%' . str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $q) . '%';
+    $whereParts[] = '(c.name LIKE :q ESCAPE \'\\\\\' OR c.phone LIKE :q ESCAPE \'\\\\\')';
+    $params[':q'] = $like;
 }
 $where = $whereParts ? ('WHERE ' . implode(' AND ', $whereParts)) : '';
 if ($tab === 'pending') {
@@ -115,16 +116,13 @@ $stmt = $pdo->prepare("
     {$where}
     GROUP BY c.id
     {$having}
-    ORDER BY c.created_at DESC, c.id DESC
-    LIMIT 200
+    ORDER BY
+        CASE WHEN :has_query = 1 THEN c.name ELSE '' END ASC,
+        c.created_at DESC,
+        c.id DESC
+    LIMIT 150
 ");
-$stmt->execute($params);
-$rows = $stmt->fetchAll();
-
-foreach ($rows as $r) {
-    udhar_ensure_ledger($pdo, (int) ($r['id'] ?? 0));
-}
-
+$params[':has_query'] = $q !== '' ? 1 : 0;
 $stmt->execute($params);
 $rows = $stmt->fetchAll();
 

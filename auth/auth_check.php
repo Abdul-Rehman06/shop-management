@@ -229,6 +229,7 @@ function app_ensure_schema(PDO $pdo): void
                 created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
                 PRIMARY KEY (id),
+                KEY idx_credit_customers_name (name),
                 KEY idx_credit_customers_status (status),
                 KEY idx_credit_customers_phone (phone)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
@@ -269,6 +270,7 @@ function app_ensure_schema(PDO $pdo): void
                 created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
                 PRIMARY KEY (id),
+                KEY idx_udhar_name (name),
                 KEY idx_udhar_status (status),
                 KEY idx_udhar_date (udhar_date),
                 KEY idx_udhar_phone (phone)
@@ -308,6 +310,8 @@ function app_ensure_schema(PDO $pdo): void
                 notes VARCHAR(255) NULL,
                 entry_type VARCHAR(40) NOT NULL DEFAULT 'dealer_payment',
                 description VARCHAR(255) NULL,
+                payment_source_account_id BIGINT UNSIGNED NULL,
+                linked_wallet_txn_id BIGINT UNSIGNED NULL,
                 created_by INT UNSIGNED NULL,
                 created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 PRIMARY KEY (id),
@@ -315,6 +319,8 @@ function app_ensure_schema(PDO $pdo): void
                 KEY idx_dealer_payments_network (network),
                 KEY idx_dealer_payments_dealer (dealer_name),
                 KEY idx_dealer_payments_entry_type (entry_type),
+                KEY idx_dealer_payments_payment_source (payment_source_account_id),
+                KEY idx_dealer_payments_wallet_link (linked_wallet_txn_id),
                 KEY idx_dealer_payments_created_by (created_by),
                 CONSTRAINT fk_dealer_payments_created_by FOREIGN KEY (created_by) REFERENCES admins(id) ON UPDATE CASCADE ON DELETE SET NULL
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
@@ -333,6 +339,16 @@ function app_ensure_schema(PDO $pdo): void
     }
 
     try {
+        $pdo->exec("ALTER TABLE credit_customers ADD KEY idx_credit_customers_name (name)");
+    } catch (Throwable $e) {
+    }
+
+    try {
+        $pdo->exec("ALTER TABLE udhar_customers ADD KEY idx_udhar_name (name)");
+    } catch (Throwable $e) {
+    }
+
+    try {
         $stmt = $pdo->query("SHOW COLUMNS FROM dealer_payments LIKE 'description'");
         $has = (bool) $stmt->fetchColumn();
         if (!$has) {
@@ -347,6 +363,26 @@ function app_ensure_schema(PDO $pdo): void
         if (!$has) {
             $pdo->exec("ALTER TABLE dealer_payments ADD COLUMN created_by INT UNSIGNED NULL");
             $pdo->exec("ALTER TABLE dealer_payments ADD KEY idx_dealer_payments_created_by (created_by)");
+        }
+    } catch (Throwable $e) {
+    }
+
+    try {
+        $stmt = $pdo->query("SHOW COLUMNS FROM dealer_payments LIKE 'payment_source_account_id'");
+        $has = (bool) $stmt->fetchColumn();
+        if (!$has) {
+            $pdo->exec("ALTER TABLE dealer_payments ADD COLUMN payment_source_account_id BIGINT UNSIGNED NULL AFTER description");
+            $pdo->exec("ALTER TABLE dealer_payments ADD KEY idx_dealer_payments_payment_source (payment_source_account_id)");
+        }
+    } catch (Throwable $e) {
+    }
+
+    try {
+        $stmt = $pdo->query("SHOW COLUMNS FROM dealer_payments LIKE 'linked_wallet_txn_id'");
+        $has = (bool) $stmt->fetchColumn();
+        if (!$has) {
+            $pdo->exec("ALTER TABLE dealer_payments ADD COLUMN linked_wallet_txn_id BIGINT UNSIGNED NULL AFTER payment_source_account_id");
+            $pdo->exec("ALTER TABLE dealer_payments ADD KEY idx_dealer_payments_wallet_link (linked_wallet_txn_id)");
         }
     } catch (Throwable $e) {
     }

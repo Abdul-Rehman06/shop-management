@@ -24,8 +24,9 @@ if ($tab !== 'all') {
     $params[':status'] = $tab;
 }
 if ($q !== '') {
-    $whereParts[] = '(c.name LIKE :q OR c.phone LIKE :q)';
-    $params[':q'] = '%' . $q . '%';
+    $like = '%' . str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $q) . '%';
+    $whereParts[] = '(c.name LIKE :q ESCAPE \'\\\\\' OR c.phone LIKE :q ESCAPE \'\\\\\')';
+    $params[':q'] = $like;
 }
 $where = $whereParts ? ('WHERE ' . implode(' AND ', $whereParts)) : '';
 
@@ -38,9 +39,13 @@ $stmt = $pdo->prepare("
     LEFT JOIN credit_transactions t ON t.customer_id = c.id
     {$where}
     GROUP BY c.id
-    ORDER BY c.created_at DESC, c.id DESC
-    LIMIT 300
+    ORDER BY
+        CASE WHEN :has_query = 1 THEN c.name ELSE '' END ASC,
+        c.created_at DESC,
+        c.id DESC
+    LIMIT 150
 ");
+$params[':has_query'] = $q !== '' ? 1 : 0;
 $stmt->execute($params);
 $rows = $stmt->fetchAll();
 

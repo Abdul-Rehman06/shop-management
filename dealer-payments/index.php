@@ -77,9 +77,12 @@ $where = 'WHERE ' . implode(' AND ', $whereParts);
 
 $stmt = $pdo->prepare("
     SELECT dp.id, dp.dealer_name, dp.network, dp.payment_date, dp.amount, dp.notes, dp.entry_type, dp.description, dp.created_by, dp.created_at,
-           a.name AS created_by_name
+           a.name AS created_by_name,
+           acc.account_name AS payment_source_name,
+           acc.account_type AS payment_source_type
     FROM dealer_payments dp
     LEFT JOIN admins a ON a.id = dp.created_by
+    LEFT JOIN accounts acc ON acc.id = dp.payment_source_account_id
     {$where}
     ORDER BY dp.payment_date DESC, dp.id DESC
     LIMIT 300
@@ -92,9 +95,12 @@ $showRunningBalance = false;
 if ($dealer !== '') {
     $stmt = $pdo->prepare("
         SELECT dp.id, dp.dealer_name, dp.network, dp.payment_date, dp.amount, dp.notes, dp.entry_type, dp.description, dp.created_by, dp.created_at,
-               a.name AS created_by_name
+               a.name AS created_by_name,
+               acc.account_name AS payment_source_name,
+               acc.account_type AS payment_source_type
         FROM dealer_payments dp
         LEFT JOIN admins a ON a.id = dp.created_by
+        LEFT JOIN accounts acc ON acc.id = dp.payment_source_account_id
         {$where}
         ORDER BY dp.payment_date ASC, dp.id ASC
         LIMIT 500
@@ -121,6 +127,24 @@ $rangeLoadReceivedTotal = (float) ($sum['load_received_total'] ?? 0);
 $rangeCreditTotal = (float) ($sum['credit_total'] ?? 0);
 $rangeCashOutTotal = $rangeAdvanceTotal + $rangePaymentTotal;
 $rangeBalanceNet = $rangeCashOutTotal - $rangeLoadReceivedTotal - $rangeCreditTotal;
+
+$paymentSourceTotals = [];
+foreach ($rows as $r) {
+    $type = trim((string) ($r['entry_type'] ?? ''));
+    if (!in_array($type, ['advance_payment', 'dealer_payment'], true)) {
+        continue;
+    }
+    $sourceName = trim((string) ($r['payment_source_name'] ?? ''));
+    $sourceType = trim((string) ($r['payment_source_type'] ?? ''));
+    $key = $sourceName !== '' ? $sourceName : 'Not linked';
+    if (!isset($paymentSourceTotals[$key])) {
+        $paymentSourceTotals[$key] = [
+            'label' => $sourceName !== '' ? $sourceName . ($sourceType !== '' ? ' (' . $sourceType . ')' : '') : 'Not linked',
+            'amount' => 0.0,
+        ];
+    }
+    $paymentSourceTotals[$key]['amount'] += (float) ($r['amount'] ?? 0);
+}
 
 $stmt = $pdo->query("
     SELECT COALESCE(SUM(amount), 0)
@@ -402,6 +426,41 @@ require_once __DIR__ . '/../includes/sidebar.php';
             </div>
         </div>
     </div>
+    <div class="col-12 col-lg-6">
+        <div class="glass-card h-100">
+            <div class="card-body p-4">
+                <div class="d-flex align-items-center gap-2 mb-4">
+                    <div class="bg-success bg-opacity-10 p-2 rounded-3 text-success">
+                        <i data-lucide="landmark" class="w-5 h-5"></i>
+                    </div>
+                    <h5 class="fw-bold mb-0 text-gray-800">Payment Source Summary <span class="text-muted fw-normal fs-6">(Filtered Range)</span></h5>
+                </div>
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle mb-0 custom-table border-0">
+                        <thead class="bg-light bg-opacity-50">
+                        <tr>
+                            <th class="border-0 px-3 py-2 text-uppercase text-xs font-bold text-gray-500 tracking-wider">Source</th>
+                            <th class="border-0 px-3 py-2 text-uppercase text-xs font-bold text-gray-500 tracking-wider text-end">Amount</th>
+                        </tr>
+                        </thead>
+                        <tbody class="border-top-0">
+                        <?php foreach ($paymentSourceTotals as $source): ?>
+                            <tr class="transition-all hover-bg-light">
+                                <td class="px-3 py-2 border-0 border-bottom text-gray-700 fw-medium"><?= h((string) ($source['label'] ?? '')) ?></td>
+                                <td class="px-3 py-2 border-0 border-bottom text-end fw-bold text-success"><?= h(number_format((float) ($source['amount'] ?? 0), 2)) ?></td>
+                            </tr>
+                        <?php endforeach; ?>
+                        <?php if (!$paymentSourceTotals): ?>
+                            <tr>
+                                <td colspan="2" class="px-3 py-4 text-center text-muted">No payment-source deductions in this range.</td>
+                            </tr>
+                        <?php endif; ?>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
 </div>
 
 <div class="glass-card animate-slide-up stagger-4">
@@ -419,6 +478,7 @@ require_once __DIR__ . '/../includes/sidebar.php';
                     <th class="border-0 px-4 py-3 text-uppercase text-xs font-bold text-gray-500 tracking-wider text-end">Credit</th>
                     <th class="border-0 px-4 py-3 text-uppercase text-xs font-bold text-gray-500 tracking-wider text-end">Load</th>
                     <th class="border-0 px-4 py-3 text-uppercase text-xs font-bold text-gray-500 tracking-wider text-end">Payment</th>
+                    <th class="border-0 px-4 py-3 text-uppercase text-xs font-bold text-gray-500 tracking-wider">Payment Source</th>
                     <th class="border-0 px-4 py-3 text-uppercase text-xs font-bold text-gray-500 tracking-wider text-end">Balance</th>
                     <th class="border-0 px-4 py-3 text-uppercase text-xs font-bold text-gray-500 tracking-wider">Created By</th>
                     <th class="border-0 px-4 py-3 text-uppercase text-xs font-bold text-gray-500 tracking-wider">Remarks</th>
@@ -458,6 +518,14 @@ require_once __DIR__ . '/../includes/sidebar.php';
                         <td class="px-4 py-3 text-end fw-semibold text-danger"><?= $creditAmt > 0 ? h(number_format($creditAmt, 2)) : '' ?></td>
                         <td class="px-4 py-3 text-end fw-semibold text-gray-700"><?= $loadAmt > 0 ? h(number_format($loadAmt, 2)) : '' ?></td>
                         <td class="px-4 py-3 text-end fw-semibold text-primary"><?= $payAmt > 0 ? h(number_format($payAmt, 2)) : '' ?></td>
+                        <td class="px-4 py-3 text-gray-600">
+                            <?php if ((string) ($r['payment_source_name'] ?? '') !== ''): ?>
+                                <?= h((string) $r['payment_source_name']) ?>
+                                <?php if ((string) ($r['payment_source_type'] ?? '') !== ''): ?>
+                                    <span class="text-muted small">(<?= h((string) $r['payment_source_type']) ?>)</span>
+                                <?php endif; ?>
+                            <?php endif; ?>
+                        </td>
                         <td class="px-4 py-3 text-end fw-bold <?= $running >= 0 ? 'text-success' : 'text-danger' ?>">
                             <?= $showRunningBalance ? h(number_format($running, 2)) : '' ?>
                         </td>

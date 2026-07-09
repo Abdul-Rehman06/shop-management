@@ -124,7 +124,8 @@ function report_fetch(PDO $pdo, array $filters): array
     if ($module === 'wallet') {
         $params = [':from' => $from, ':to' => $to];
         $stmt = $pdo->prepare("
-            SELECT wt.date, a.account_type, a.account_name, wt.type, wt.customer_name, wt.number, wt.transaction_id, wt.amount, wt.charges, wt.remarks
+            SELECT wt.date, a.account_type, a.account_name, wt.type, wt.customer_name, wt.number, wt.transaction_id,
+                   wt.amount, wt.charges, wt.commission_method, wt.account_amount, wt.payment_status, wt.completed_at, wt.remarks
             FROM wallet_transactions wt
             JOIN accounts a ON a.id = wt.account_id
             WHERE wt.date >= :from AND wt.date <= :to
@@ -137,18 +138,29 @@ function report_fetch(PDO $pdo, array $filters): array
 
         $receiving = 0.0;
         $sending = 0.0;
+        $accountDeduction = 0.0;
         $commission = 0.0;
+        $pendingCount = 0;
+        $pendingAmount = 0.0;
         foreach ($rows as $r) {
-            if ((string) ($r['type'] ?? '') === 'receiving') {
+            $typeValue = (string) ($r['type'] ?? '');
+            $statusValue = (string) ($r['payment_status'] ?? 'completed');
+            if ($typeValue === 'receiving' && $statusValue !== 'cancelled') {
                 $receiving += (float) ($r['amount'] ?? 0);
-            } else {
+            } elseif ($typeValue === 'sending' && $statusValue === 'completed') {
                 $sending += (float) ($r['amount'] ?? 0);
+                $accountDeduction += (float) ($r['account_amount'] ?? 0);
+            } elseif ($typeValue === 'sending' && $statusValue === 'pending') {
+                $pendingCount++;
+                $pendingAmount += (float) ($r['amount'] ?? 0);
             }
-            $commission += (float) ($r['charges'] ?? 0);
+            if (($typeValue === 'receiving' && $statusValue !== 'cancelled') || ($typeValue === 'sending' && $statusValue === 'completed')) {
+                $commission += (float) ($r['charges'] ?? 0);
+            }
         }
 
         return [
-            'headers' => ['Date', 'Account Type', 'Account', 'Type', 'Customer', 'Number', 'Transaction ID', 'Amount', 'Commission', 'Note'],
+            'headers' => ['Date', 'Account Type', 'Account', 'Type', 'Customer', 'Number', 'Transaction ID', 'Amount', 'Commission', 'Commission Method', 'Account Deduction', 'Status', 'Completed At', 'Note'],
             'rows' => array_map(static function (array $r): array {
                 return [
                     (string) ($r['date'] ?? ''),
@@ -160,14 +172,21 @@ function report_fetch(PDO $pdo, array $filters): array
                     (string) ($r['transaction_id'] ?? ''),
                     number_format((float) ($r['amount'] ?? 0), 2, '.', ''),
                     number_format((float) ($r['charges'] ?? 0), 2, '.', ''),
+                    (string) ($r['commission_method'] ?? ''),
+                    number_format((float) ($r['account_amount'] ?? 0), 2, '.', ''),
+                    (string) ($r['payment_status'] ?? ''),
+                    (string) ($r['completed_at'] ?? ''),
                     (string) ($r['remarks'] ?? ''),
                 ];
             }, $rows),
             'summary' => [
                 'Receiving' => number_format($receiving, 2),
-                'Sending' => number_format($sending, 2),
+                'Cash Withdrawals' => number_format($sending, 2),
+                'Account Deductions' => number_format($accountDeduction, 2),
                 'Commission' => number_format($commission, 2),
-                'Net' => number_format($receiving - $sending, 2),
+                'Pending Payments' => (string) $pendingCount,
+                'Pending Amount' => number_format($pendingAmount, 2),
+                'Net' => number_format($receiving - $accountDeduction, 2),
             ],
         ];
     }
@@ -201,9 +220,12 @@ function report_fetch(PDO $pdo, array $filters): array
 
         $stmt = $pdo->prepare("
             SELECT dp.payment_date, dp.dealer_name, dp.network, dp.entry_type, dp.amount, dp.description, dp.notes, dp.created_at,
-                   a.name AS created_by_name
+                   a.name AS created_by_name,
+                   acc.account_name AS payment_source_name,
+                   acc.account_type AS payment_source_type
             FROM dealer_payments dp
             LEFT JOIN admins a ON a.id = dp.created_by
+            LEFT JOIN accounts acc ON acc.id = dp.payment_source_account_id
             {$where}
             ORDER BY dp.dealer_name ASC, dp.payment_date ASC, dp.id ASC
         ");
@@ -248,6 +270,7 @@ function report_fetch(PDO $pdo, array $filters): array
                 $credit > 0 ? number_format($credit, 2, '.', '') : '',
                 $load > 0 ? number_format($load, 2, '.', '') : '',
                 $pay > 0 ? number_format($pay, 2, '.', '') : '',
+                (string) ($r['payment_source_name'] ?? '') . ((string) ($r['payment_source_type'] ?? '') !== '' ? ' (' . (string) $r['payment_source_type'] . ')' : ''),
                 number_format((float) $runningByDealer[$d], 2, '.', ''),
                 (string) ($r['created_by_name'] ?? ''),
                 (string) ($r['notes'] ?? ''),
@@ -257,7 +280,7 @@ function report_fetch(PDO $pdo, array $filters): array
         $netBalance = ($totalAdvance + $totalPayment) - ($totalLoad + $totalCredit);
 
         return [
-            'headers' => ['Date', 'Dealer', 'Network', 'Transaction Type', 'Description', 'Advance', 'Credit', 'Load Received', 'Payment Sent', 'Balance', 'Created By', 'Remarks'],
+            'headers' => ['Date', 'Dealer', 'Network', 'Transaction Type', 'Description', 'Advance', 'Credit', 'Load Received', 'Payment Sent', 'Payment Source', 'Balance', 'Created By', 'Remarks'],
             'rows' => $outRows,
             'summary' => [
                 'Total Dealer Advances' => number_format($totalAdvance, 2),
@@ -297,9 +320,12 @@ function report_fetch(PDO $pdo, array $filters): array
 
         $stmt = $pdo->prepare("
             SELECT dp.payment_date, dp.dealer_name, dp.network, dp.entry_type, dp.amount, dp.description, dp.notes, dp.created_at,
-                   a.name AS created_by_name
+                   a.name AS created_by_name,
+                   acc.account_name AS payment_source_name,
+                   acc.account_type AS payment_source_type
             FROM dealer_payments dp
             LEFT JOIN admins a ON a.id = dp.created_by
+            LEFT JOIN accounts acc ON acc.id = dp.payment_source_account_id
             {$where}
             ORDER BY dp.payment_date ASC, dp.id ASC
         ");
@@ -307,12 +333,25 @@ function report_fetch(PDO $pdo, array $filters): array
         $rows = $stmt->fetchAll();
 
         $total = 0.0;
+        $sourceTotals = [];
         foreach ($rows as $r) {
             $total += (float) ($r['amount'] ?? 0);
+            $sourceKey = trim((string) ($r['payment_source_name'] ?? ''));
+            if ($sourceKey === '') {
+                $sourceKey = 'Not linked';
+            }
+            $sourceTotals[$sourceKey] = (float) ($sourceTotals[$sourceKey] ?? 0) + (float) ($r['amount'] ?? 0);
+        }
+
+        $summary = [
+            'Total Payments' => number_format($total, 2),
+        ];
+        foreach ($sourceTotals as $sourceName => $sourceAmount) {
+            $summary['Source: ' . $sourceName] = number_format($sourceAmount, 2);
         }
 
         return [
-            'headers' => ['Date', 'Dealer', 'Network', 'Type', 'Amount', 'Description', 'Remarks', 'Created By', 'Created At'],
+            'headers' => ['Date', 'Dealer', 'Network', 'Type', 'Amount', 'Payment Source', 'Description', 'Remarks', 'Created By', 'Created At'],
             'rows' => array_map(static function (array $r): array {
                 return [
                     (string) ($r['payment_date'] ?? ''),
@@ -320,15 +359,14 @@ function report_fetch(PDO $pdo, array $filters): array
                     (string) ($r['network'] ?? ''),
                     (string) ($r['entry_type'] ?? ''),
                     number_format((float) ($r['amount'] ?? 0), 2, '.', ''),
+                    (string) ($r['payment_source_name'] ?? '') . ((string) ($r['payment_source_type'] ?? '') !== '' ? ' (' . (string) $r['payment_source_type'] . ')' : ''),
                     (string) ($r['description'] ?? ''),
                     (string) ($r['notes'] ?? ''),
                     (string) ($r['created_by_name'] ?? ''),
                     (string) ($r['created_at'] ?? ''),
                 ];
             }, $rows),
-            'summary' => [
-                'Total Payments' => number_format($total, 2),
-            ],
+            'summary' => $summary,
         ];
     }
 

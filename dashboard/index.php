@@ -11,6 +11,7 @@ function money($value): string
 
 $pdo = db();
 $canViewProfit = app_can_view_profit();
+$admin = app_current_admin();
 
 $range = trim((string) ($_GET['range'] ?? 'today'));
 if (!in_array($range, ['today', '7days', 'month', 'custom'], true)) {
@@ -71,8 +72,8 @@ $walletOpenForDate = function (PDO $pdo, int $accountId, string $date): float {
         $stmt = $pdo->prepare("
             SELECT COALESCE(SUM(
                 CASE
-                    WHEN type = 'receiving' THEN amount
-                    WHEN type = 'sending' THEN -amount
+                    WHEN type = 'receiving' AND payment_status <> 'cancelled' THEN amount
+                    WHEN type = 'sending' AND payment_status = 'completed' THEN -account_amount
                     ELSE 0
                 END
             ), 0)
@@ -90,8 +91,8 @@ $walletOpenForDate = function (PDO $pdo, int $accountId, string $date): float {
     $stmt = $pdo->prepare("
         SELECT COALESCE(SUM(
             CASE
-                WHEN type = 'receiving' THEN amount
-                WHEN type = 'sending' THEN -amount
+                WHEN type = 'receiving' AND payment_status <> 'cancelled' THEN amount
+                WHEN type = 'sending' AND payment_status = 'completed' THEN -account_amount
                 ELSE 0
             END
         ), 0)
@@ -115,8 +116,12 @@ try {
 
         $stmt = $pdo->prepare("
             SELECT
-                COALESCE(SUM(CASE WHEN type = 'receiving' THEN amount ELSE 0 END), 0) AS receiving_total,
-                COALESCE(SUM(CASE WHEN type = 'sending' THEN amount ELSE 0 END), 0) AS sending_total
+                COALESCE(SUM(CASE WHEN type = 'receiving' AND payment_status <> 'cancelled' THEN amount ELSE 0 END), 0) AS receiving_total,
+                COALESCE(SUM(CASE WHEN type = 'sending' AND payment_status = 'completed' THEN amount ELSE 0 END), 0) AS sending_total,
+                COALESCE(SUM(CASE WHEN type = 'sending' AND payment_status = 'completed' THEN account_amount ELSE 0 END), 0) AS account_deduction_total,
+                COALESCE(SUM(CASE WHEN type <> 'opening' AND payment_status <> 'cancelled' AND (type <> 'sending' OR payment_status = 'completed') THEN charges ELSE 0 END), 0) AS commission_total,
+                COALESCE(SUM(CASE WHEN type = 'sending' AND payment_status = 'pending' THEN 1 ELSE 0 END), 0) AS pending_count,
+                COALESCE(SUM(CASE WHEN type = 'sending' AND payment_status = 'pending' THEN amount ELSE 0 END), 0) AS pending_amount
             FROM wallet_transactions
             WHERE account_id = ?
               AND date >= ?
@@ -127,11 +132,16 @@ try {
         $r = $stmt->fetch() ?: [];
         $recv = (float) ($r['receiving_total'] ?? 0);
         $sent = (float) ($r['sending_total'] ?? 0);
+        $accountDeduction = (float) ($r['account_deduction_total'] ?? 0);
 
         $walletAll['opening'] += $opening;
         $walletAll['receiving'] += $recv;
         $walletAll['sending'] += $sent;
-        $walletAll['closing'] += ($opening + $recv - $sent);
+        $walletAll['closing'] += ($opening + $recv - $accountDeduction);
+        $rangeWalletCommission += (float) ($r['commission_total'] ?? 0);
+        $rangeWalletAccountDeduction += $accountDeduction;
+        $rangePendingPayments += (int) ($r['pending_count'] ?? 0);
+        $rangePendingAmount += (float) ($r['pending_amount'] ?? 0);
     }
 } catch (Throwable $e) {
 }
@@ -143,6 +153,10 @@ $rangeDealerPayments = 0.0;
 $rangeLoadSold = 0.0;
 $rangeUdharRecovery = 0.0;
 $rangeCreditAdvance = 0.0;
+$rangeWalletCommission = 0.0;
+$rangeWalletAccountDeduction = 0.0;
+$rangePendingPayments = 0;
+$rangePendingAmount = 0.0;
 
 try {
     $stmt = $pdo->prepare("SELECT COALESCE(SUM(amount), 0) FROM expenses WHERE date >= :from AND date <= :to");
@@ -272,39 +286,45 @@ $easypaisaNet = (float) $pdo->query("
     SELECT COALESCE(SUM(
         CASE
             WHEN wt.type IN ('opening', 'receiving') THEN wt.amount
-            WHEN wt.type = 'sending' THEN -wt.amount
+            WHEN wt.type = 'sending' THEN -wt.account_amount
             ELSE 0
         END
     ), 0)
     FROM wallet_transactions wt
     JOIN accounts a ON a.id = wt.account_id
     WHERE a.account_type = 'easypaisa'
+      AND (wt.payment_status <> 'cancelled' OR wt.type = 'opening')
+      AND (wt.type <> 'sending' OR wt.payment_status = 'completed')
 ")->fetchColumn();
 
 $jazzcashNet = (float) $pdo->query("
     SELECT COALESCE(SUM(
         CASE
             WHEN wt.type IN ('opening', 'receiving') THEN wt.amount
-            WHEN wt.type = 'sending' THEN -wt.amount
+            WHEN wt.type = 'sending' THEN -wt.account_amount
             ELSE 0
         END
     ), 0)
     FROM wallet_transactions wt
     JOIN accounts a ON a.id = wt.account_id
     WHERE a.account_type = 'jazzcash'
+      AND (wt.payment_status <> 'cancelled' OR wt.type = 'opening')
+      AND (wt.type <> 'sending' OR wt.payment_status = 'completed')
 ")->fetchColumn();
 
 $bankNet = (float) $pdo->query("
     SELECT COALESCE(SUM(
         CASE
             WHEN wt.type IN ('opening', 'receiving') THEN wt.amount
-            WHEN wt.type = 'sending' THEN -wt.amount
+            WHEN wt.type = 'sending' THEN -wt.account_amount
             ELSE 0
         END
     ), 0)
     FROM wallet_transactions wt
     JOIN accounts a ON a.id = wt.account_id
     WHERE a.account_type = 'bank'
+      AND (wt.payment_status <> 'cancelled' OR wt.type = 'opening')
+      AND (wt.type <> 'sending' OR wt.payment_status = 'completed')
 ")->fetchColumn();
 
 $todayExpense = (float) $pdo->query("
@@ -443,6 +463,7 @@ $cashReceivedToday = 0.0;
 $cashSentToday = 0.0;
 $cashExpectedToday = 0.0;
 $cashCountToday = null;
+$cashCommissionToday = 0.0;
 try {
     $cashOpeningToday = (float) $pdo->query("
         SELECT COALESCE(SUM(wt.amount), 0)
@@ -453,7 +474,12 @@ try {
           AND wt.type = 'opening'
     ")->fetchColumn();
     $walletCashReceiving = (float) $pdo->query("
-        SELECT COALESCE(SUM(wt.amount), 0)
+        SELECT COALESCE(SUM(
+            CASE
+                WHEN wt.payment_status <> 'cancelled' THEN wt.amount
+                ELSE 0
+            END
+        ), 0)
         FROM wallet_transactions wt
         JOIN accounts a ON a.id = wt.account_id
         WHERE a.account_type = 'cash'
@@ -461,12 +487,28 @@ try {
           AND wt.type = 'receiving'
     ")->fetchColumn();
     $walletCashSending = (float) $pdo->query("
-        SELECT COALESCE(SUM(wt.amount), 0)
+        SELECT COALESCE(SUM(
+            CASE
+                WHEN wt.payment_status = 'completed' THEN wt.amount
+                ELSE 0
+            END
+        ), 0)
         FROM wallet_transactions wt
         JOIN accounts a ON a.id = wt.account_id
         WHERE a.account_type = 'cash'
           AND wt.date = CURDATE()
           AND wt.type = 'sending'
+    ")->fetchColumn();
+    $cashCommissionToday = (float) $pdo->query("
+        SELECT COALESCE(SUM(
+            CASE
+                WHEN wt.type = 'receiving' AND wt.payment_status <> 'cancelled' THEN wt.charges
+                WHEN wt.type = 'sending' AND wt.payment_status = 'completed' THEN wt.charges
+                ELSE 0
+            END
+        ), 0)
+        FROM wallet_transactions wt
+        WHERE wt.date = CURDATE()
     ")->fetchColumn();
     $salesCash = (float) $pdo->query("
         SELECT COALESCE(SUM(quantity * sale_price), 0)
@@ -722,6 +764,51 @@ $extraHead = '<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/char
                     <div class="text-2xl font-bold text-gray-900">Rs <?= money($rangeCreditAdvance) ?></div>
                 </div>
             </div>
+            <div class="col-12 col-sm-6 col-md-4 col-lg-3">
+                <div class="bg-white/60 backdrop-blur-sm border border-white rounded-2xl p-4 h-100 shadow-sm hover:shadow-md transition-shadow group">
+                    <div class="flex items-center gap-3 mb-2">
+                        <div class="w-8 h-8 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center group-hover:scale-110 transition-transform">
+                            <i data-lucide="badge-dollar-sign" class="w-4 h-4"></i>
+                        </div>
+                        <div class="text-sm font-semibold text-gray-500 uppercase tracking-wider">Commission Earned</div>
+                    </div>
+                    <div class="text-2xl font-bold text-gray-900">Rs <?= money($rangeWalletCommission) ?></div>
+                </div>
+            </div>
+            <div class="col-12 col-sm-6 col-md-4 col-lg-3">
+                <div class="bg-white/60 backdrop-blur-sm border border-white rounded-2xl p-4 h-100 shadow-sm hover:shadow-md transition-shadow group">
+                    <div class="flex items-center gap-3 mb-2">
+                        <div class="w-8 h-8 rounded-full bg-rose-100 text-rose-600 flex items-center justify-center group-hover:scale-110 transition-transform">
+                            <i data-lucide="arrow-up-from-line" class="w-4 h-4"></i>
+                        </div>
+                        <div class="text-sm font-semibold text-gray-500 uppercase tracking-wider">Cash Withdrawals</div>
+                    </div>
+                    <div class="text-2xl font-bold text-gray-900">Rs <?= money((float) ($walletAll['sending'] ?? 0)) ?></div>
+                </div>
+            </div>
+            <div class="col-12 col-sm-6 col-md-4 col-lg-3">
+                <div class="bg-white/60 backdrop-blur-sm border border-white rounded-2xl p-4 h-100 shadow-sm hover:shadow-md transition-shadow group">
+                    <div class="flex items-center gap-3 mb-2">
+                        <div class="w-8 h-8 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center group-hover:scale-110 transition-transform">
+                            <i data-lucide="landmark" class="w-4 h-4"></i>
+                        </div>
+                        <div class="text-sm font-semibold text-gray-500 uppercase tracking-wider">Account Deductions</div>
+                    </div>
+                    <div class="text-2xl font-bold text-gray-900">Rs <?= money($rangeWalletAccountDeduction) ?></div>
+                </div>
+            </div>
+            <div class="col-12 col-sm-6 col-md-4 col-lg-3">
+                <div class="bg-white/60 backdrop-blur-sm border border-white rounded-2xl p-4 h-100 shadow-sm hover:shadow-md transition-shadow group">
+                    <div class="flex items-center gap-3 mb-2">
+                        <div class="w-8 h-8 rounded-full bg-amber-100 text-amber-600 flex items-center justify-center group-hover:scale-110 transition-transform">
+                            <i data-lucide="hourglass" class="w-4 h-4"></i>
+                        </div>
+                        <div class="text-sm font-semibold text-gray-500 uppercase tracking-wider">Pending Payments</div>
+                    </div>
+                    <div class="text-2xl font-bold text-gray-900"><?= h((string) $rangePendingPayments) ?></div>
+                    <div class="text-sm text-gray-500 mt-1">Rs <?= money($rangePendingAmount) ?></div>
+                </div>
+            </div>
             <?php if ($canViewProfit): ?>
                 <div class="col-12 col-sm-6 col-md-4 col-lg-3">
                     <div class="bg-gradient-to-br from-emerald-50 to-teal-50 border border-emerald-100 rounded-2xl p-4 h-100 shadow-sm hover:shadow-md transition-shadow group">
@@ -771,7 +858,7 @@ $extraHead = '<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/char
         <div class="absolute -right-6 -top-6 w-32 h-32 bg-red-50 rounded-full group-hover:scale-150 transition-transform duration-700 ease-out z-0 opacity-50"></div>
         <div class="relative z-10">
             <div class="flex items-center justify-between mb-6">
-                <div class="text-xs font-bold text-gray-500 uppercase tracking-widest">Total Sending</div>
+                <div class="text-xs font-bold text-gray-500 uppercase tracking-widest">Cash Withdrawals</div>
                 <div class="p-2.5 bg-red-100 text-red-600 rounded-xl group-hover:bg-red-200 transition-colors"><i data-lucide="arrow-up-right" class="w-5 h-5"></i></div>
             </div>
             <div class="text-3xl font-extrabold text-gray-900 tracking-tight">Rs <?= money((float) ($walletAll['sending'] ?? 0)) ?></div>
@@ -782,7 +869,7 @@ $extraHead = '<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/char
         <div class="absolute -right-6 -top-6 w-32 h-32 bg-brand-50 rounded-full group-hover:scale-150 transition-transform duration-700 ease-out z-0 opacity-50"></div>
         <div class="relative z-10">
             <div class="flex items-center justify-between mb-6">
-                <div class="text-xs font-bold text-gray-500 uppercase tracking-widest">Total Closing</div>
+                <div class="text-xs font-bold text-gray-500 uppercase tracking-widest">Account Balance</div>
                 <div class="p-2.5 bg-brand-100 text-brand-600 rounded-xl group-hover:bg-brand-200 transition-colors"><i data-lucide="wallet" class="w-5 h-5"></i></div>
             </div>
             <div class="text-3xl font-extrabold text-gray-900 tracking-tight text-transparent bg-clip-text bg-gradient-premium">Rs <?= money((float) ($walletAll['closing'] ?? 0)) ?></div>
@@ -1105,6 +1192,17 @@ $extraHead = '<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/char
                     <div class="p-2.5 bg-red-100 text-red-600 rounded-xl group-hover:bg-red-200 transition-colors"><i data-lucide="arrow-up-right" class="w-5 h-5"></i></div>
                 </div>
                 <div class="text-3xl font-extrabold text-gray-900 tracking-tight">Rs <?= money($cashSentToday) ?></div>
+                <div class="text-sm font-medium text-gray-500 mt-2 bg-gray-50 px-3 py-1.5 rounded-lg inline-block border border-gray-100">Today</div>
+            </div>
+        </div>
+        <div class="glass-card rounded-3xl p-6 relative overflow-hidden group">
+            <div class="absolute -right-6 -top-6 w-32 h-32 bg-emerald-50 rounded-full group-hover:scale-150 transition-transform duration-700 ease-out z-0 opacity-50"></div>
+            <div class="relative z-10">
+                <div class="flex items-center justify-between mb-6">
+                    <div class="text-xs font-bold text-gray-500 uppercase tracking-widest">Commission Income</div>
+                    <div class="p-2.5 bg-emerald-100 text-emerald-600 rounded-xl group-hover:bg-emerald-200 transition-colors"><i data-lucide="badge-dollar-sign" class="w-5 h-5"></i></div>
+                </div>
+                <div class="text-3xl font-extrabold text-gray-900 tracking-tight">Rs <?= money($cashCommissionToday) ?></div>
                 <div class="text-sm font-medium text-gray-500 mt-2 bg-gray-50 px-3 py-1.5 rounded-lg inline-block border border-gray-100">Today</div>
             </div>
         </div>

@@ -13,7 +13,13 @@ if ($id <= 0) {
     app_redirect('dealer-payments/index.php');
 }
 
-$stmt = $pdo->prepare("SELECT * FROM dealer_payments WHERE id = :id LIMIT 1");
+$stmt = $pdo->prepare("
+    SELECT dp.*, a.account_name AS payment_source_name, a.account_type AS payment_source_type
+    FROM dealer_payments dp
+    LEFT JOIN accounts a ON a.id = dp.payment_source_account_id
+    WHERE dp.id = :id
+    LIMIT 1
+");
 $stmt->execute([':id' => $id]);
 $row = $stmt->fetch();
 if (!$row) {
@@ -23,9 +29,25 @@ if (!$row) {
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $before = $row;
+    $linkedWalletTxnId = (int) ($row['linked_wallet_txn_id'] ?? 0);
 
-    $stmt = $pdo->prepare("DELETE FROM dealer_payments WHERE id = :id");
-    $stmt->execute([':id' => $id]);
+    $pdo->beginTransaction();
+    try {
+        if ($linkedWalletTxnId > 0) {
+            $stmt = $pdo->prepare("DELETE FROM wallet_transactions WHERE id = :id");
+            $stmt->execute([':id' => $linkedWalletTxnId]);
+        }
+
+        $stmt = $pdo->prepare("DELETE FROM dealer_payments WHERE id = :id");
+        $stmt->execute([':id' => $id]);
+        $pdo->commit();
+    } catch (Throwable $e) {
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+        flash_set('error', 'Could not delete payment.');
+        app_redirect('dealer-payments/index.php');
+    }
 
     app_audit_log('dealer_payments', $id, 'delete', is_array($before) ? $before : null, null);
 
@@ -67,6 +89,19 @@ require_once __DIR__ . '/../includes/sidebar.php';
             <div class="col-12 col-md-3">
                 <div class="text-muted small">Amount</div>
                 <div class="fw-semibold"><?= h(number_format((float) $row['amount'], 2)) ?></div>
+            </div>
+            <div class="col-12 col-md-4">
+                <div class="text-muted small">Payment Source</div>
+                <div class="fw-semibold">
+                    <?php if ((int) ($row['payment_source_account_id'] ?? 0) > 0): ?>
+                        <?= h((string) ($row['payment_source_name'] ?? '')) ?>
+                        <?php if ((string) ($row['payment_source_type'] ?? '') !== ''): ?>
+                            (<?= h((string) $row['payment_source_type']) ?>)
+                        <?php endif; ?>
+                    <?php else: ?>
+                        Not linked
+                    <?php endif; ?>
+                </div>
             </div>
             <div class="col-12">
                 <div class="text-muted small">Notes</div>

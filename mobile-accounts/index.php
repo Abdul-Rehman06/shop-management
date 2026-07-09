@@ -39,8 +39,8 @@ $wallet_compute_auto_opening = function (PDO $pdo, int $accountId, string $date)
         $stmt = $pdo->prepare("
             SELECT COALESCE(SUM(
                 CASE
-                    WHEN type = 'receiving' THEN amount
-                    WHEN type = 'sending' THEN -amount
+                    WHEN type = 'receiving' AND payment_status <> 'cancelled' THEN amount
+                    WHEN type = 'sending' AND payment_status = 'completed' THEN -account_amount
                     ELSE 0
                 END
             ), 0)
@@ -58,8 +58,8 @@ $wallet_compute_auto_opening = function (PDO $pdo, int $accountId, string $date)
     $stmt = $pdo->prepare("
         SELECT COALESCE(SUM(
             CASE
-                WHEN type = 'receiving' THEN amount
-                WHEN type = 'sending' THEN -amount
+                WHEN type = 'receiving' AND payment_status <> 'cancelled' THEN amount
+                WHEN type = 'sending' AND payment_status = 'completed' THEN -account_amount
                 ELSE 0
             END
         ), 0)
@@ -80,6 +80,62 @@ try {
 } catch (Throwable $e) {
     $savedCustomers = [];
 }
+
+$wallet_effective_account_amount = static function (string $txnType, float $amount, float $charges, string $commissionMethod): float {
+    if ($txnType === 'sending') {
+        return $amount + ($commissionMethod === 'deduct_from_account' ? $charges : 0.0);
+    }
+    return $amount;
+};
+
+$wallet_effective_status = static function (string $txnType, string $status): string {
+    if ($txnType !== 'sending') {
+        return 'completed';
+    }
+    return in_array($status, ['pending', 'completed', 'cancelled'], true) ? $status : 'completed';
+};
+
+$wallet_effective_completed_at = static function (string $txnType, string $status, ?string $existingCompletedAt = null): ?string {
+    if ($txnType === 'sending') {
+        if ($status === 'completed') {
+            return ($existingCompletedAt !== null && trim($existingCompletedAt) !== '') ? $existingCompletedAt : date('Y-m-d H:i:s');
+        }
+        return null;
+    }
+    return ($existingCompletedAt !== null && trim($existingCompletedAt) !== '') ? $existingCompletedAt : date('Y-m-d H:i:s');
+};
+
+$wallet_find_pending_payment = static function (PDO $pdo, string $customerName, string $number, int $excludeId = 0): ?array {
+    $matchParts = [];
+    $params = [];
+    if ($number !== '') {
+        $matchParts[] = 'number = :number';
+        $params[':number'] = $number;
+    }
+    if ($customerName !== '') {
+        $matchParts[] = 'customer_name = :customer_name';
+        $params[':customer_name'] = $customerName;
+    }
+    if (!$matchParts) {
+        return null;
+    }
+    $sql = "
+        SELECT wt.id, wt.date, wt.amount, wt.customer_name, wt.number, a.account_name
+        FROM wallet_transactions wt
+        JOIN accounts a ON a.id = wt.account_id
+        WHERE wt.type = 'sending'
+          AND wt.payment_status = 'pending'
+    ";
+    if ($excludeId > 0) {
+        $sql .= " AND wt.id <> :exclude_id";
+        $params[':exclude_id'] = $excludeId;
+    }
+    $sql .= ' AND (' . implode(' OR ', $matchParts) . ') ORDER BY wt.date DESC, wt.id DESC LIMIT 1';
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute($params);
+    $row = $stmt->fetch();
+    return is_array($row) ? $row : null;
+};
 
 // Handle Form Submissions
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -142,21 +198,36 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $entryType = $_POST['entry_type'] ?? 'receiving';
         $amount = (float)($_POST['amount'] ?? 0);
         $charges = (float)($_POST['charges'] ?? 0);
+        $commissionMethod = trim((string) ($_POST['commission_method'] ?? 'separate_cash'));
+        $paymentStatus = trim((string) ($_POST['payment_status'] ?? 'completed'));
         $customerName = trim($_POST['customer_name'] ?? '');
         $number = trim($_POST['number'] ?? '');
         $transactionId = trim($_POST['transaction_id'] ?? '');
         $remarks = trim($_POST['remarks'] ?? '');
 
         if ($accountId > 0 && $amount > 0 && in_array($entryType, ['receiving', 'sending'])) {
+            if (!in_array($commissionMethod, ['separate_cash', 'deduct_from_account'], true)) {
+                $commissionMethod = 'separate_cash';
+            }
+            $paymentStatus = $wallet_effective_status($entryType, $paymentStatus);
+            if ($entryType === 'sending') {
+                $pendingExisting = $wallet_find_pending_payment($pdo, $customerName, $number);
+                if ($pendingExisting) {
+                    flash_set('error', 'Pending Payment Exists for this customer. Please complete or cancel the existing pending record first.');
+                    app_redirect($returnUrl);
+                }
+            }
             $openingRow = $wallet_get_opening_txn($pdo, $accountId, $date);
             if (!$openingRow) {
                 $autoOpening = $wallet_compute_auto_opening($pdo, $accountId, $date);
                 $stmt = $pdo->prepare("INSERT INTO wallet_transactions (account_id, date, type, amount) VALUES (?, ?, 'opening', ?)");
                 $stmt->execute([$accountId, $date, $autoOpening]);
             }
-            $stmt = $pdo->prepare("INSERT INTO wallet_transactions (account_id, date, type, amount, charges, customer_name, number, transaction_id, remarks) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
+            $accountAmount = $wallet_effective_account_amount($entryType, $amount, $charges, $commissionMethod);
+            $completedAt = $wallet_effective_completed_at($entryType, $paymentStatus);
+            $stmt = $pdo->prepare("INSERT INTO wallet_transactions (account_id, date, type, amount, charges, commission_method, account_amount, payment_status, completed_at, customer_name, number, transaction_id, remarks) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
             $stmt->execute([
-                $accountId, $date, $entryType, $amount, $charges,
+                $accountId, $date, $entryType, $amount, $charges, $commissionMethod, $accountAmount, $paymentStatus, $completedAt,
                 $customerName !== '' ? $customerName : null,
                 $number !== '' ? $number : null,
                 $transactionId !== '' ? $transactionId : null,
@@ -191,6 +262,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $txnType = trim((string) ($_POST['txn_type'] ?? ''));
         $txnAmount = trim((string) ($_POST['txn_amount'] ?? ''));
         $txnCharges = trim((string) ($_POST['txn_charges'] ?? '0'));
+        $txnCommissionMethod = trim((string) ($_POST['txn_commission_method'] ?? 'separate_cash'));
+        $txnPaymentStatus = trim((string) ($_POST['txn_payment_status'] ?? 'completed'));
         $txnCustomer = trim((string) ($_POST['txn_customer_name'] ?? ''));
         $txnNumber = trim((string) ($_POST['txn_number'] ?? ''));
         $txnTransactionId = trim((string) ($_POST['txn_transaction_id'] ?? ''));
@@ -220,6 +293,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             flash_set('error', 'Commission must be a number.');
             app_redirect($returnUrl);
         }
+        if (!in_array($txnCommissionMethod, ['separate_cash', 'deduct_from_account'], true)) {
+            $txnCommissionMethod = 'separate_cash';
+        }
 
         $stmt = $pdo->prepare('SELECT * FROM wallet_transactions WHERE id = :id LIMIT 1');
         $stmt->execute([':id' => $txnId]);
@@ -228,6 +304,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             flash_set('error', 'Transaction not found.');
             app_redirect($returnUrl);
         }
+        $txnPaymentStatus = $wallet_effective_status($txnType, $txnPaymentStatus);
+        if ($txnType === 'sending') {
+            $pendingExisting = $wallet_find_pending_payment($pdo, $txnCustomer, $txnNumber, $txnId);
+            if ($pendingExisting) {
+                flash_set('error', 'Pending Payment Exists for this customer. Please complete or cancel the existing pending record first.');
+                app_redirect($returnUrl);
+            }
+        }
+        $txnChargesValue = $txnCharges === '' ? 0.0 : (float) $txnCharges;
+        $txnAccountAmount = $wallet_effective_account_amount($txnType, (float) $txnAmount, $txnChargesValue, $txnCommissionMethod);
+        $completedAt = $wallet_effective_completed_at($txnType, $txnPaymentStatus, (string) ($before['completed_at'] ?? ''));
 
         $stmt = $pdo->prepare("
             UPDATE wallet_transactions
@@ -236,6 +323,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 type = :type,
                 amount = :amount,
                 charges = :charges,
+                commission_method = :commission_method,
+                account_amount = :account_amount,
+                payment_status = :payment_status,
+                completed_at = :completed_at,
                 customer_name = :customer_name,
                 number = :number,
                 transaction_id = :transaction_id,
@@ -247,7 +338,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             ':date' => $txnDate,
             ':type' => $txnType,
             ':amount' => (float) $txnAmount,
-            ':charges' => $txnCharges === '' ? 0.0 : (float) $txnCharges,
+            ':charges' => $txnChargesValue,
+            ':commission_method' => $txnCommissionMethod,
+            ':account_amount' => $txnAccountAmount,
+            ':payment_status' => $txnPaymentStatus,
+            ':completed_at' => $completedAt,
             ':customer_name' => $txnCustomer !== '' ? $txnCustomer : null,
             ':number' => $txnNumber !== '' ? $txnNumber : null,
             ':transaction_id' => $txnTransactionId !== '' ? $txnTransactionId : null,
@@ -374,8 +469,8 @@ function get_daily_stats(PDO $pdo, int $accountId, string $date): array {
             $stmt = $pdo->prepare("
                 SELECT COALESCE(SUM(
                     CASE
-                        WHEN type = 'receiving' THEN amount
-                        WHEN type = 'sending' THEN -amount
+                        WHEN type = 'receiving' AND payment_status <> 'cancelled' THEN amount
+                        WHEN type = 'sending' AND payment_status = 'completed' THEN -account_amount
                         ELSE 0
                     END
                 ), 0)
@@ -392,8 +487,8 @@ function get_daily_stats(PDO $pdo, int $accountId, string $date): array {
             $stmt = $pdo->prepare("
                 SELECT COALESCE(SUM(
                     CASE
-                        WHEN type = 'receiving' THEN amount
-                        WHEN type = 'sending' THEN -amount
+                        WHEN type = 'receiving' AND payment_status <> 'cancelled' THEN amount
+                        WHEN type = 'sending' AND payment_status = 'completed' THEN -account_amount
                         ELSE 0
                     END
                 ), 0)
@@ -409,8 +504,12 @@ function get_daily_stats(PDO $pdo, int $accountId, string $date): array {
 
     $stmt = $pdo->prepare("
         SELECT
-            COALESCE(SUM(CASE WHEN type = 'receiving' THEN amount ELSE 0 END), 0) AS received,
-            COALESCE(SUM(CASE WHEN type = 'sending' THEN amount ELSE 0 END), 0) AS sent
+            COALESCE(SUM(CASE WHEN type = 'receiving' AND payment_status <> 'cancelled' THEN amount ELSE 0 END), 0) AS received,
+            COALESCE(SUM(CASE WHEN type = 'sending' AND payment_status = 'completed' THEN amount ELSE 0 END), 0) AS sent,
+            COALESCE(SUM(CASE WHEN type = 'sending' AND payment_status = 'completed' THEN account_amount ELSE 0 END), 0) AS account_deduction,
+            COALESCE(SUM(CASE WHEN type <> 'opening' AND payment_status <> 'cancelled' AND (type <> 'sending' OR payment_status = 'completed') THEN charges ELSE 0 END), 0) AS commission,
+            COALESCE(SUM(CASE WHEN type = 'sending' AND payment_status = 'pending' THEN amount ELSE 0 END), 0) AS pending_amount,
+            COALESCE(SUM(CASE WHEN type = 'sending' AND payment_status = 'pending' THEN 1 ELSE 0 END), 0) AS pending_count
         FROM wallet_transactions
         WHERE account_id = ?
           AND date = ?
@@ -421,22 +520,30 @@ function get_daily_stats(PDO $pdo, int $accountId, string $date): array {
 
     $received = (float) ($row['received'] ?? 0);
     $sent = (float) ($row['sent'] ?? 0);
+    $accountDeduction = (float) ($row['account_deduction'] ?? 0);
 
     return [
         'opening' => $opening,
         'received' => $received,
         'sent' => $sent,
-        'closing' => $opening + $received - $sent,
+        'account_deduction' => $accountDeduction,
+        'commission' => (float) ($row['commission'] ?? 0),
+        'pending_amount' => (float) ($row['pending_amount'] ?? 0),
+        'pending_count' => (int) ($row['pending_count'] ?? 0),
+        'closing' => $opening + $received - $accountDeduction,
     ];
 }
 
 // Calculate combined totals for selected accounts
-$totalOpening = 0.0; $totalReceived = 0.0; $totalSent = 0.0; $totalClosing = 0.0;
+$totalOpening = 0.0; $totalReceived = 0.0; $totalSent = 0.0; $totalAccountDeduction = 0.0; $totalClosing = 0.0; $totalPendingAmount = 0.0; $totalPendingCount = 0;
 foreach ($selectedAccounts as $a) {
     $st = get_daily_stats($pdo, (int)$a['id'], $currentDate);
     $totalOpening += $st['opening'];
     $totalReceived += $st['received'];
     $totalSent += $st['sent'];
+    $totalAccountDeduction += (float) ($st['account_deduction'] ?? 0);
+    $totalPendingAmount += (float) ($st['pending_amount'] ?? 0);
+    $totalPendingCount += (int) ($st['pending_count'] ?? 0);
     $totalClosing += $st['closing'];
 }
 
@@ -482,6 +589,8 @@ if (!empty($accIds)) {
         SELECT COALESCE(SUM(charges), 0)
         FROM wallet_transactions
         WHERE date = ? AND account_id IN ($in) AND type != 'opening'
+          AND payment_status <> 'cancelled'
+          AND (type <> 'sending' OR payment_status = 'completed')
     ");
     $params = array_merge([$currentDate], $accIds);
     $stmt->execute($params);
@@ -625,6 +734,10 @@ if ($searchAccountType !== '' && !array_key_exists($searchAccountType, $typeConf
     $searchAccountType = '';
 }
 $searchAccountId = (int) ($_GET['search_account_id'] ?? 0);
+$searchStatus = trim((string) ($_GET['status'] ?? ''));
+if ($searchStatus !== '' && !in_array($searchStatus, ['pending', 'completed', 'cancelled'], true)) {
+    $searchStatus = '';
+}
 $validSearchAccountId = false;
 if ($searchAccountId > 0) {
     foreach ($allAccounts as $a) {
@@ -648,7 +761,7 @@ foreach ($allAccounts as $a) {
 }
 
 $searchRows = [];
-$searchTotals = ['count' => 0, 'receiving' => 0.0, 'sending' => 0.0, 'commission' => 0.0, 'net' => 0.0];
+$searchTotals = ['count' => 0, 'receiving' => 0.0, 'sending' => 0.0, 'account_deduction' => 0.0, 'commission' => 0.0, 'pending_count' => 0, 'pending_amount' => 0.0, 'net' => 0.0];
 if ($tab === 'search') {
     $whereParts = [
         'wt.date >= :from',
@@ -667,6 +780,10 @@ if ($tab === 'search') {
         $whereParts[] = 'wt.account_id = :account_id';
         $params[':account_id'] = $searchAccountId;
     }
+    if ($searchStatus !== '') {
+        $whereParts[] = 'wt.payment_status = :payment_status';
+        $params[':payment_status'] = $searchStatus;
+    }
     if ($searchQ !== '') {
         $like = '%' . str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $searchQ) . '%';
         $whereParts[] = "(wt.customer_name LIKE :q_name ESCAPE '\\\\' OR wt.number LIKE :q_number ESCAPE '\\\\' OR wt.transaction_id LIKE :q_tx ESCAPE '\\\\')";
@@ -678,7 +795,7 @@ if ($tab === 'search') {
 
     $stmt = $pdo->prepare("
         SELECT
-            wt.id, wt.date, wt.created_at, wt.type, wt.amount, wt.charges, wt.customer_name, wt.number, wt.transaction_id, wt.remarks,
+            wt.id, wt.date, wt.created_at, wt.type, wt.amount, wt.charges, wt.commission_method, wt.account_amount, wt.payment_status, wt.completed_at, wt.customer_name, wt.number, wt.transaction_id, wt.remarks,
             a.account_name, a.account_type
         FROM wallet_transactions wt
         JOIN accounts a ON a.id = wt.account_id
@@ -692,9 +809,12 @@ if ($tab === 'search') {
     $stmt = $pdo->prepare("
         SELECT
             COUNT(*) AS total_rows,
-            COALESCE(SUM(CASE WHEN wt.type='receiving' THEN wt.amount ELSE 0 END), 0) AS total_receiving,
-            COALESCE(SUM(CASE WHEN wt.type='sending' THEN wt.amount ELSE 0 END), 0) AS total_sending,
-            COALESCE(SUM(wt.charges), 0) AS total_commission
+            COALESCE(SUM(CASE WHEN wt.type='receiving' AND wt.payment_status <> 'cancelled' THEN wt.amount ELSE 0 END), 0) AS total_receiving,
+            COALESCE(SUM(CASE WHEN wt.type='sending' AND wt.payment_status = 'completed' THEN wt.amount ELSE 0 END), 0) AS total_sending,
+            COALESCE(SUM(CASE WHEN wt.type='sending' AND wt.payment_status = 'completed' THEN wt.account_amount ELSE 0 END), 0) AS total_account_deduction,
+            COALESCE(SUM(CASE WHEN wt.type <> 'opening' AND wt.payment_status <> 'cancelled' AND (wt.type <> 'sending' OR wt.payment_status = 'completed') THEN wt.charges ELSE 0 END), 0) AS total_commission,
+            COALESCE(SUM(CASE WHEN wt.type='sending' AND wt.payment_status='pending' THEN wt.amount ELSE 0 END), 0) AS total_pending_amount,
+            COALESCE(SUM(CASE WHEN wt.type='sending' AND wt.payment_status='pending' THEN 1 ELSE 0 END), 0) AS total_pending_count
         FROM wallet_transactions wt
         JOIN accounts a ON a.id = wt.account_id
         {$where}
@@ -704,8 +824,11 @@ if ($tab === 'search') {
     $searchTotals['count'] = (int) ($row['total_rows'] ?? 0);
     $searchTotals['receiving'] = (float) ($row['total_receiving'] ?? 0);
     $searchTotals['sending'] = (float) ($row['total_sending'] ?? 0);
+    $searchTotals['account_deduction'] = (float) ($row['total_account_deduction'] ?? 0);
     $searchTotals['commission'] = (float) ($row['total_commission'] ?? 0);
-    $searchTotals['net'] = $searchTotals['receiving'] - $searchTotals['sending'];
+    $searchTotals['pending_amount'] = (float) ($row['total_pending_amount'] ?? 0);
+    $searchTotals['pending_count'] = (int) ($row['total_pending_count'] ?? 0);
+    $searchTotals['net'] = $searchTotals['receiving'] - $searchTotals['account_deduction'];
 }
 
 require_once __DIR__ . '/../includes/header.php';
@@ -828,6 +951,23 @@ if ($editTxnId > 0 && $canEditDelete) {
                 <label class="form-label text-xs uppercase tracking-wider text-gray-500 mb-1">Commission</label>
                 <input class="form-control bg-gray-50 border-0 shadow-sm rounded-xl" type="number" step="0.01" name="txn_charges" value="<?= h((string) ($editTxn['charges'] ?? 0)) ?>">
             </div>
+            <div>
+                <label class="form-label text-xs uppercase tracking-wider text-gray-500 mb-1">Commission Method</label>
+                <?php $editCommissionMethod = (string) ($editTxn['commission_method'] ?? 'separate_cash'); ?>
+                <select class="form-select bg-gray-50 border-0 shadow-sm rounded-xl" name="txn_commission_method">
+                    <option value="separate_cash" <?= $editCommissionMethod === 'separate_cash' ? 'selected' : '' ?>>Separate Cash</option>
+                    <option value="deduct_from_account" <?= $editCommissionMethod === 'deduct_from_account' ? 'selected' : '' ?>>Deduct From Account</option>
+                </select>
+            </div>
+            <div>
+                <label class="form-label text-xs uppercase tracking-wider text-gray-500 mb-1">Status</label>
+                <?php $editPaymentStatus = (string) ($editTxn['payment_status'] ?? 'completed'); ?>
+                <select class="form-select bg-gray-50 border-0 shadow-sm rounded-xl" name="txn_payment_status">
+                    <option value="completed" <?= $editPaymentStatus === 'completed' ? 'selected' : '' ?>>Completed</option>
+                    <option value="pending" <?= $editPaymentStatus === 'pending' ? 'selected' : '' ?>>Pending</option>
+                    <option value="cancelled" <?= $editPaymentStatus === 'cancelled' ? 'selected' : '' ?>>Cancelled</option>
+                </select>
+            </div>
             <div class="md:col-span-2">
                 <label class="form-label text-xs uppercase tracking-wider text-gray-500 mb-1">Customer Name</label>
                 <input class="form-control bg-gray-50 border-0 shadow-sm rounded-xl" type="text" name="txn_customer_name" value="<?= h((string) ($editTxn['customer_name'] ?? '')) ?>">
@@ -843,6 +983,21 @@ if ($editTxnId > 0 && $canEditDelete) {
             <div class="md:col-span-2">
                 <label class="form-label text-xs uppercase tracking-wider text-gray-500 mb-1">Note</label>
                 <input class="form-control bg-gray-50 border-0 shadow-sm rounded-xl" type="text" name="txn_remarks" value="<?= h((string) ($editTxn['remarks'] ?? '')) ?>">
+            </div>
+            <div class="md:col-span-4">
+                <?php
+                $editType = (string) ($editTxn['type'] ?? '');
+                $editAmount = (float) ($editTxn['amount'] ?? 0);
+                $editCharges = (float) ($editTxn['charges'] ?? 0);
+                $editAccountAmount = (float) ($editTxn['account_amount'] ?? ($editType === 'sending' && $editCommissionMethod === 'deduct_from_account' ? ($editAmount + $editCharges) : $editAmount));
+                ?>
+                <div class="text-xs text-gray-500 bg-gray-50 rounded-xl px-4 py-3 border border-gray-100">
+                    Account Deduction: <strong>Rs. <?= h(number_format($editAccountAmount, 2)) ?></strong>
+                    <?php if ($editType === 'sending'): ?>
+                        | Cash Drawer Impact: <strong>Rs. <?= h(number_format($editAmount, 2)) ?></strong>
+                    <?php endif; ?>
+                    | Completed At: <strong><?= h((string) ($editTxn['completed_at'] ?? '')) ?: 'Not completed yet' ?></strong>
+                </div>
             </div>
             <div class="md:col-span-4 mt-2">
                 <button class="btn btn-gradient rounded-xl px-8 shadow-md hover:shadow-lg w-full md:w-auto">Save Changes</button>
@@ -891,6 +1046,15 @@ if ($editTxnId > 0 && $canEditDelete) {
                     <?php endforeach; ?>
                 </select>
             </div>
+            <div class="col-6 col-md-2">
+                <label class="form-label">Status</label>
+                <select class="form-select" name="status">
+                    <option value="">All</option>
+                    <option value="pending" <?= $searchStatus === 'pending' ? 'selected' : '' ?>>Pending</option>
+                    <option value="completed" <?= $searchStatus === 'completed' ? 'selected' : '' ?>>Completed</option>
+                    <option value="cancelled" <?= $searchStatus === 'cancelled' ? 'selected' : '' ?>>Cancelled</option>
+                </select>
+            </div>
             <div class="col-12 d-flex gap-2">
                 <button class="btn btn-gradient shadow-glow">Search</button>
                 <a class="btn btn-outline-secondary" href="?tab=search&from=<?= h($currentDate) ?>&to=<?= h($currentDate) ?>">Clear</a>
@@ -931,6 +1095,22 @@ if ($editTxnId > 0 && $canEditDelete) {
                 </div>
             </div>
         </div>
+        <div class="col-12 col-md-3">
+            <div class="card border-0 shadow-sm">
+                <div class="card-body">
+                    <div class="text-muted small">Account Deduction</div>
+                    <div class="h5 mb-0">Rs <?= h(number_format((float) $searchTotals['account_deduction'], 2)) ?></div>
+                </div>
+            </div>
+        </div>
+        <div class="col-12 col-md-3">
+            <div class="card border-0 shadow-sm">
+                <div class="card-body">
+                    <div class="text-muted small">Pending Payments</div>
+                    <div class="h5 mb-0"><?= h((string) $searchTotals['pending_count']) ?> / Rs <?= h(number_format((float) $searchTotals['pending_amount'], 2)) ?></div>
+                </div>
+            </div>
+        </div>
     </div>
 
     <div class="bg-white rounded-2xl border border-gray-200 shadow-sm">
@@ -945,8 +1125,10 @@ if ($editTxnId > 0 && $canEditDelete) {
                     <th>Date</th>
                     <th>Account</th>
                     <th>Type</th>
+                    <th>Status</th>
                     <th class="text-end">Amount</th>
                     <th class="text-end">Commission</th>
+                    <th class="text-end">Account Deduction</th>
                     <th>Customer</th>
                     <th>Number</th>
                     <th>Transaction ID</th>
@@ -970,8 +1152,10 @@ if ($editTxnId > 0 && $canEditDelete) {
                         <td><?= h((string) ($r['date'] ?? '')) ?></td>
                         <td><?= h((string) ($r['account_name'] ?? '')) ?></td>
                         <td><?= h((string) ($r['type'] ?? '')) ?></td>
+                        <td><?= h(ucfirst((string) ($r['payment_status'] ?? 'completed'))) ?></td>
                         <td class="text-end" style="<?= h($amountStyle) ?>"><?= h(number_format((float) ($r['amount'] ?? 0), 2)) ?></td>
                         <td class="text-end"><?= h(number_format((float) ($r['charges'] ?? 0), 2)) ?></td>
+                        <td class="text-end"><?= h(number_format((float) ($r['account_amount'] ?? ($r['amount'] ?? 0)), 2)) ?></td>
                         <td><?= h((string) ($r['customer_name'] ?? '')) ?></td>
                         <td><?= h((string) ($r['number'] ?? '')) ?></td>
                         <td><?= h((string) ($r['transaction_id'] ?? '')) ?></td>
@@ -1000,7 +1184,7 @@ if ($editTxnId > 0 && $canEditDelete) {
                 <?php endforeach; ?>
                 <?php if (!$searchRows): ?>
                     <tr>
-                        <td colspan="<?= h((string) (9 + ($canEditDelete ? 1 : 0))) ?>" class="text-center text-muted py-4">No transactions found for your filters.</td>
+                        <td colspan="<?= h((string) (11 + ($canEditDelete ? 1 : 0))) ?>" class="text-center text-muted py-4">No transactions found for your filters.</td>
                     </tr>
                 <?php endif; ?>
                 </tbody>
@@ -1090,12 +1274,20 @@ if ($editTxnId > 0 && $canEditDelete) {
                     <div class="text-xl font-extrabold text-emerald-600">+Rs. <?= number_format($totalReceived, 2) ?></div>
                 </div>
                 <div class="bg-rose-50/50 p-4 rounded-2xl border border-rose-100 shadow-sm hover:shadow-md transition-shadow group">
-                    <div class="text-xs font-bold text-rose-700 uppercase tracking-wider mb-2">Total Sent</div>
+                    <div class="text-xs font-bold text-rose-700 uppercase tracking-wider mb-2">Cash Withdrawals</div>
                     <div class="text-xl font-extrabold text-rose-600">-Rs. <?= number_format($totalSent, 2) ?></div>
                 </div>
                 <div class="bg-white/60 p-4 rounded-2xl border border-white shadow-sm hover:shadow-md transition-shadow group">
                     <div class="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Commission</div>
                     <div class="text-xl font-extrabold text-gray-900">Rs. <?= number_format($totalCommission, 2) ?></div>
+                </div>
+                <div class="bg-indigo-50/50 p-4 rounded-2xl border border-indigo-100 shadow-sm hover:shadow-md transition-shadow group">
+                    <div class="text-xs font-bold text-indigo-700 uppercase tracking-wider mb-2">Account Deduction</div>
+                    <div class="text-xl font-extrabold text-indigo-600">Rs. <?= number_format($totalAccountDeduction, 2) ?></div>
+                </div>
+                <div class="bg-amber-50/50 p-4 rounded-2xl border border-amber-100 shadow-sm hover:shadow-md transition-shadow group">
+                    <div class="text-xs font-bold text-amber-700 uppercase tracking-wider mb-2">Pending Payments</div>
+                    <div class="text-xl font-extrabold text-amber-600"><?= h((string) $totalPendingCount) ?> / Rs. <?= number_format($totalPendingAmount, 2) ?></div>
                 </div>
                 <div class="col-span-2 bg-gradient-to-r from-brand-50 to-blue-50 p-5 rounded-2xl border border-brand-100 shadow-sm relative overflow-hidden group">
                     <div class="absolute right-0 top-0 w-32 h-32 bg-white/40 rounded-full blur-[20px] -z-10 translate-x-1/2 -translate-y-1/2"></div>
@@ -1205,6 +1397,21 @@ if ($editTxnId > 0 && $canEditDelete) {
                 <input type="number" step="0.01" name="charges" class="form-control bg-gray-50 border-0 shadow-sm rounded-xl" placeholder="0.00">
             </div>
             <div>
+                <label class="form-label text-xs uppercase tracking-wider text-gray-500 mb-1">Commission Method</label>
+                <select name="commission_method" class="form-select bg-gray-50 border-0 shadow-sm rounded-xl">
+                    <option value="separate_cash">Separate Cash</option>
+                    <option value="deduct_from_account">Deduct From Account</option>
+                </select>
+            </div>
+            <div>
+                <label class="form-label text-xs uppercase tracking-wider text-gray-500 mb-1">Status</label>
+                <select name="payment_status" class="form-select bg-gray-50 border-0 shadow-sm rounded-xl">
+                    <option value="completed">Completed</option>
+                    <option value="pending">Pending</option>
+                    <option value="cancelled">Cancelled</option>
+                </select>
+            </div>
+            <div>
                 <label class="form-label text-xs uppercase tracking-wider text-gray-500 mb-1">Saved Customer</label>
                 <select class="form-select bg-gray-50 border-0 shadow-sm rounded-xl" id="saved_customer_select">
                     <option value="">-- Select Customer --</option>
@@ -1235,6 +1442,14 @@ if ($editTxnId > 0 && $canEditDelete) {
             <div class="md:col-span-2">
                 <label class="form-label text-xs uppercase tracking-wider text-gray-500 mb-1">Note (optional)</label>
                 <input type="text" name="remarks" class="form-control bg-gray-50 border-0 shadow-sm rounded-xl" placeholder="Any additional details...">
+            </div>
+            <div class="md:col-span-4">
+                <div class="text-xs text-gray-500 bg-gray-50 rounded-xl px-4 py-3 border border-gray-100">
+                    Rule:
+                    <strong>Separate Cash</strong> = account deduction equals withdrawal amount only.
+                    <strong>Deduct From Account</strong> = account deduction equals withdrawal amount + commission.
+                    Cash drawer always changes by withdrawal amount only.
+                </div>
             </div>
             
             <div class="md:col-span-4 mt-2">
@@ -1328,8 +1543,10 @@ if ($editTxnId > 0 && $canEditDelete) {
                             <th class="py-3 px-4 font-semibold">Date</th>
                             <th class="py-3 px-4 font-semibold">Account</th>
                             <th class="py-3 px-4 font-semibold">Type</th>
+                            <th class="py-3 px-4 font-semibold">Status</th>
                             <th class="py-3 px-4 font-semibold text-end">Amount (Rs)</th>
                             <th class="py-3 px-4 font-semibold text-end">Commission</th>
+                            <th class="py-3 px-4 font-semibold text-end">Account Deduction</th>
                             <th class="py-3 px-4 font-semibold">Customer</th>
                             <th class="py-3 px-4 font-semibold">Transaction ID</th>
                             <th class="py-3 px-4 font-semibold">Note</th>
@@ -1354,11 +1571,15 @@ if ($editTxnId > 0 && $canEditDelete) {
                                     <span class="d-inline-block px-2 py-1 rounded-pill bg-rose-50 text-rose-600 border border-rose-100 text-xs fw-medium">Sending</span>
                                 <?php endif; ?>
                             </td>
+                            <td class="py-3 px-4 text-gray-700"><?= h(ucfirst((string) ($t['payment_status'] ?? 'completed'))) ?></td>
                             <td class="py-3 px-4 text-end fw-bold <?= $isRec ? 'text-emerald-600' : 'text-rose-600' ?>">
                                 <?= $isRec ? '+' : '-' ?><?= number_format((float)$t['amount'], 2) ?>
                             </td>
                             <td class="py-3 px-4 text-end fw-bold text-emerald-600">
                                 <?= number_format((float) ($t['charges'] ?? 0), 2) ?>
+                            </td>
+                            <td class="py-3 px-4 text-end fw-bold text-indigo-600">
+                                <?= number_format((float) ($t['account_amount'] ?? $t['amount']), 2) ?>
                             </td>
                             <td class="py-3 px-4 text-gray-700"><?= h((string)$t['customer_name']) ?></td>
                             <td class="py-3 px-4 text-gray-700"><?= h((string)$t['transaction_id']) ?></td>
@@ -1387,7 +1608,7 @@ if ($editTxnId > 0 && $canEditDelete) {
                         <?php endforeach; ?>
                         <?php if (empty($transactions)): ?>
                         <tr>
-                            <td colspan="<?= h((string) (9 + ($canEditDelete ? 1 : 0))) ?>" class="py-5 text-center text-gray-500">No transactions found for this date.</td>
+                            <td colspan="<?= h((string) (11 + ($canEditDelete ? 1 : 0))) ?>" class="py-5 text-center text-gray-500">No transactions found for this date.</td>
                         </tr>
                         <?php endif; ?>
                     </tbody>
@@ -1414,12 +1635,20 @@ if ($editTxnId > 0 && $canEditDelete) {
                     <span class="text-sm text-emerald-600 fw-bold">+Rs. <?= number_format($totalReceived, 2) ?></span>
                 </div>
                 <div class="d-flex justify-content-between align-items-center">
-                    <span class="text-sm text-gray-500 fw-medium">Total Sent</span>
+                    <span class="text-sm text-gray-500 fw-medium">Cash Withdrawals</span>
                     <span class="text-sm text-rose-600 fw-bold">-Rs. <?= number_format($totalSent, 2) ?></span>
                 </div>
                 <div class="d-flex justify-content-between align-items-center">
                     <span class="text-sm text-gray-500 fw-medium">Commission</span>
                     <span class="text-sm text-emerald-600 fw-bold">Rs. <?= number_format($totalCommission, 2) ?></span>
+                </div>
+                <div class="d-flex justify-content-between align-items-center">
+                    <span class="text-sm text-gray-500 fw-medium">Account Deduction</span>
+                    <span class="text-sm text-indigo-600 fw-bold">-Rs. <?= number_format($totalAccountDeduction, 2) ?></span>
+                </div>
+                <div class="d-flex justify-content-between align-items-center">
+                    <span class="text-sm text-gray-500 fw-medium">Pending Payments</span>
+                    <span class="text-sm text-amber-600 fw-bold"><?= h((string) $totalPendingCount) ?> / Rs. <?= number_format($totalPendingAmount, 2) ?></span>
                 </div>
                 
                 <hr class="border-gray-100 my-4">

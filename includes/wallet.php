@@ -30,17 +30,57 @@ function wallet_ensure_schema(PDO $pdo): void
             type ENUM('opening','receiving','sending') NOT NULL,
             amount DECIMAL(12,2) NOT NULL DEFAULT 0.00,
             charges DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+            commission_method VARCHAR(30) NOT NULL DEFAULT 'separate_cash',
+            account_amount DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+            payment_status VARCHAR(20) NOT NULL DEFAULT 'completed',
+            completed_at DATETIME NULL,
             remarks VARCHAR(255) NULL,
             created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
             PRIMARY KEY (id),
             KEY idx_wallet_date (date),
             KEY idx_wallet_account (account_id),
             KEY idx_wallet_type (type),
+            KEY idx_wallet_status (payment_status),
             KEY idx_wallet_number (number),
             KEY idx_wallet_transaction_id (transaction_id),
             CONSTRAINT fk_wallet_account FOREIGN KEY (account_id) REFERENCES accounts(id) ON UPDATE CASCADE
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     ");
+
+    try {
+        $stmt = $pdo->query("SHOW COLUMNS FROM wallet_transactions LIKE 'commission_method'");
+        if (!(bool) $stmt->fetchColumn()) {
+            $pdo->exec("ALTER TABLE wallet_transactions ADD COLUMN commission_method VARCHAR(30) NOT NULL DEFAULT 'separate_cash' AFTER charges");
+        }
+    } catch (Throwable $e) {
+    }
+
+    try {
+        $stmt = $pdo->query("SHOW COLUMNS FROM wallet_transactions LIKE 'account_amount'");
+        if (!(bool) $stmt->fetchColumn()) {
+            $pdo->exec("ALTER TABLE wallet_transactions ADD COLUMN account_amount DECIMAL(12,2) NOT NULL DEFAULT 0.00 AFTER commission_method");
+            $pdo->exec("UPDATE wallet_transactions SET account_amount = amount WHERE account_amount = 0");
+        }
+    } catch (Throwable $e) {
+    }
+
+    try {
+        $stmt = $pdo->query("SHOW COLUMNS FROM wallet_transactions LIKE 'payment_status'");
+        if (!(bool) $stmt->fetchColumn()) {
+            $pdo->exec("ALTER TABLE wallet_transactions ADD COLUMN payment_status VARCHAR(20) NOT NULL DEFAULT 'completed' AFTER account_amount");
+            $pdo->exec("ALTER TABLE wallet_transactions ADD KEY idx_wallet_status (payment_status)");
+        }
+    } catch (Throwable $e) {
+    }
+
+    try {
+        $stmt = $pdo->query("SHOW COLUMNS FROM wallet_transactions LIKE 'completed_at'");
+        if (!(bool) $stmt->fetchColumn()) {
+            $pdo->exec("ALTER TABLE wallet_transactions ADD COLUMN completed_at DATETIME NULL AFTER payment_status");
+            $pdo->exec("UPDATE wallet_transactions SET completed_at = created_at WHERE completed_at IS NULL AND payment_status = 'completed' AND type IN ('receiving','sending')");
+        }
+    } catch (Throwable $e) {
+    }
 
     $count = (int) $pdo->query("SELECT COUNT(*) FROM accounts")->fetchColumn();
     if ($count === 0) {
@@ -152,9 +192,9 @@ function wallet_bulk_insert(PDO $pdo, int $accountId, array $rows): void
 
     $stmt = $pdo->prepare("
         INSERT INTO wallet_transactions
-            (account_id, date, customer_name, number, transaction_id, type, amount, charges, remarks, created_at)
+            (account_id, date, customer_name, number, transaction_id, type, amount, charges, commission_method, account_amount, payment_status, completed_at, remarks, created_at)
         VALUES
-            (:account_id, :date, :customer_name, :number, :transaction_id, :type, :amount, :charges, :remarks, :created_at)
+            (:account_id, :date, :customer_name, :number, :transaction_id, :type, :amount, :charges, :commission_method, :account_amount, :payment_status, :completed_at, :remarks, :created_at)
     ");
 
     foreach ($rows as $r) {
@@ -167,6 +207,10 @@ function wallet_bulk_insert(PDO $pdo, int $accountId, array $rows): void
             ':type' => (string) $r['type'],
             ':amount' => (float) ($r['amount'] ?? 0),
             ':charges' => (float) ($r['charges'] ?? 0),
+            ':commission_method' => (string) ($r['commission_method'] ?? 'separate_cash'),
+            ':account_amount' => (float) ($r['account_amount'] ?? $r['amount'] ?? 0),
+            ':payment_status' => (string) ($r['payment_status'] ?? 'completed'),
+            ':completed_at' => (string) ($r['completed_at'] ?? $r['created_at'] ?? date('Y-m-d H:i:s')),
             ':remarks' => ($r['remarks'] ?? null) !== '' ? ($r['remarks'] ?? null) : null,
             ':created_at' => (string) ($r['created_at'] ?? date('Y-m-d H:i:s')),
         ]);
@@ -213,9 +257,10 @@ function wallet_balance_summary(PDO $pdo, int $accountId): array
     $stmt = $pdo->prepare("
         SELECT
             COALESCE(SUM(CASE WHEN type='opening' THEN amount ELSE 0 END), 0) AS opening_total,
-            COALESCE(SUM(CASE WHEN type='receiving' THEN amount ELSE 0 END), 0) AS receiving_total,
-            COALESCE(SUM(CASE WHEN type='sending' THEN amount ELSE 0 END), 0) AS sending_total,
-            COALESCE(SUM(charges), 0) AS charges_total
+            COALESCE(SUM(CASE WHEN type='receiving' AND payment_status <> 'cancelled' THEN amount ELSE 0 END), 0) AS receiving_total,
+            COALESCE(SUM(CASE WHEN type='sending' AND payment_status = 'completed' THEN amount ELSE 0 END), 0) AS sending_total,
+            COALESCE(SUM(CASE WHEN type='sending' AND payment_status = 'completed' THEN account_amount ELSE 0 END), 0) AS account_deduction_total,
+            COALESCE(SUM(CASE WHEN type <> 'opening' AND payment_status <> 'cancelled' AND (type <> 'sending' OR payment_status = 'completed') THEN charges ELSE 0 END), 0) AS charges_total
         FROM wallet_transactions
         WHERE account_id = :account_id
     ");
@@ -225,13 +270,15 @@ function wallet_balance_summary(PDO $pdo, int $accountId): array
     $opening = (float) ($row['opening_total'] ?? 0);
     $receiving = (float) ($row['receiving_total'] ?? 0);
     $sending = (float) ($row['sending_total'] ?? 0);
+    $accountDeduction = (float) ($row['account_deduction_total'] ?? 0);
     $charges = (float) ($row['charges_total'] ?? 0);
-    $closing = $opening + $receiving - $sending;
+    $closing = $opening + $receiving - $accountDeduction;
 
     return [
         'opening' => $opening,
         'receiving' => $receiving,
         'sending' => $sending,
+        'account_deduction' => $accountDeduction,
         'closing' => $closing,
         'commission' => $charges,
     ];
@@ -241,6 +288,7 @@ function wallet_recent_transactions(PDO $pdo, int $accountId, int $limit = 50): 
 {
     $stmt = $pdo->prepare("
         SELECT id, date, customer_name, number, transaction_id, type, amount, charges, remarks
+             , commission_method, account_amount, payment_status, completed_at
         FROM wallet_transactions
         WHERE account_id = :account_id
         ORDER BY date DESC, id DESC
@@ -265,8 +313,10 @@ function wallet_combined_summary(PDO $pdo, ?string $accountType = null, bool $on
     $stmt = $pdo->prepare("
         SELECT
             COALESCE(SUM(CASE WHEN wt.type='opening' THEN wt.amount ELSE 0 END), 0) AS opening_total,
-            COALESCE(SUM(CASE WHEN wt.type='receiving' THEN wt.amount ELSE 0 END), 0) AS receiving_total,
-            COALESCE(SUM(CASE WHEN wt.type='sending' THEN wt.amount ELSE 0 END), 0) AS sending_total
+            COALESCE(SUM(CASE WHEN wt.type='receiving' AND wt.payment_status <> 'cancelled' THEN wt.amount ELSE 0 END), 0) AS receiving_total,
+            COALESCE(SUM(CASE WHEN wt.type='sending' AND wt.payment_status = 'completed' THEN wt.amount ELSE 0 END), 0) AS sending_total,
+            COALESCE(SUM(CASE WHEN wt.type='sending' AND wt.payment_status = 'completed' THEN wt.account_amount ELSE 0 END), 0) AS account_deduction_total,
+            COALESCE(SUM(CASE WHEN wt.type <> 'opening' AND wt.payment_status <> 'cancelled' AND (wt.type <> 'sending' OR wt.payment_status = 'completed') THEN wt.charges ELSE 0 END), 0) AS charges_total
         FROM wallet_transactions wt
         JOIN accounts a ON a.id = wt.account_id
         {$where}
@@ -277,12 +327,16 @@ function wallet_combined_summary(PDO $pdo, ?string $accountType = null, bool $on
     $opening = (float) ($row['opening_total'] ?? 0);
     $receiving = (float) ($row['receiving_total'] ?? 0);
     $sending = (float) ($row['sending_total'] ?? 0);
+    $accountDeduction = (float) ($row['account_deduction_total'] ?? 0);
+    $charges = (float) ($row['charges_total'] ?? 0);
 
     return [
         'opening' => $opening,
         'receiving' => $receiving,
         'sending' => $sending,
-        'closing' => $opening + $receiving - $sending,
+        'account_deduction' => $accountDeduction,
+        'commission' => $charges,
+        'closing' => $opening + $receiving - $accountDeduction,
     ];
 }
 
@@ -296,7 +350,8 @@ function wallet_search_transactions(PDO $pdo, int $accountId, string $query, int
     $like = '%' . str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $q) . '%';
 
     $stmt = $pdo->prepare("
-        SELECT id, date, customer_name, number, transaction_id, type, amount, charges, remarks
+        SELECT id, date, customer_name, number, transaction_id, type, amount, charges, remarks,
+               commission_method, account_amount, payment_status, completed_at
         FROM wallet_transactions
         WHERE account_id = :account_id
           AND (
@@ -321,6 +376,10 @@ function wallet_search_totals(PDO $pdo, int $accountId, string $query): array
         return [
             'receiving' => 0.0,
             'sending' => 0.0,
+            'account_deduction' => 0.0,
+            'commission' => 0.0,
+            'pending_count' => 0,
+            'pending_amount' => 0.0,
             'count' => 0,
         ];
     }
@@ -330,8 +389,12 @@ function wallet_search_totals(PDO $pdo, int $accountId, string $query): array
     $stmt = $pdo->prepare("
         SELECT
             COUNT(*) AS total_rows,
-            COALESCE(SUM(CASE WHEN type='receiving' THEN amount ELSE 0 END), 0) AS receiving_total,
-            COALESCE(SUM(CASE WHEN type='sending' THEN amount ELSE 0 END), 0) AS sending_total
+            COALESCE(SUM(CASE WHEN type='receiving' AND payment_status <> 'cancelled' THEN amount ELSE 0 END), 0) AS receiving_total,
+            COALESCE(SUM(CASE WHEN type='sending' AND payment_status = 'completed' THEN amount ELSE 0 END), 0) AS sending_total,
+            COALESCE(SUM(CASE WHEN type='sending' AND payment_status = 'completed' THEN account_amount ELSE 0 END), 0) AS account_deduction_total,
+            COALESCE(SUM(CASE WHEN type <> 'opening' AND payment_status <> 'cancelled' AND (type <> 'sending' OR payment_status = 'completed') THEN charges ELSE 0 END), 0) AS commission_total,
+            COALESCE(SUM(CASE WHEN type='sending' AND payment_status='pending' THEN amount ELSE 0 END), 0) AS pending_amount_total,
+            COALESCE(SUM(CASE WHEN type='sending' AND payment_status='pending' THEN 1 ELSE 0 END), 0) AS pending_rows
         FROM wallet_transactions
         WHERE account_id = :account_id
           AND (
@@ -349,6 +412,10 @@ function wallet_search_totals(PDO $pdo, int $accountId, string $query): array
     return [
         'receiving' => (float) ($row['receiving_total'] ?? 0),
         'sending' => (float) ($row['sending_total'] ?? 0),
+        'account_deduction' => (float) ($row['account_deduction_total'] ?? 0),
+        'commission' => (float) ($row['commission_total'] ?? 0),
+        'pending_count' => (int) ($row['pending_rows'] ?? 0),
+        'pending_amount' => (float) ($row['pending_amount_total'] ?? 0),
         'count' => (int) ($row['total_rows'] ?? 0),
     ];
 }

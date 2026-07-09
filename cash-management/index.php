@@ -35,7 +35,14 @@ try {
 function cash_sum_wallet(PDO $pdo, string $date, string $type): float
 {
     $stmt = $pdo->prepare("
-        SELECT COALESCE(SUM(wt.amount), 0)
+        SELECT COALESCE(SUM(
+            CASE
+                WHEN wt.type = 'opening' THEN wt.amount
+                WHEN wt.type = 'receiving' AND wt.payment_status <> 'cancelled' THEN wt.amount
+                WHEN wt.type = 'sending' AND wt.payment_status = 'completed' THEN wt.amount
+                ELSE 0
+            END
+        ), 0)
         FROM wallet_transactions wt
         JOIN accounts a ON a.id = wt.account_id
         WHERE a.account_type = 'cash'
@@ -123,6 +130,7 @@ function dealer_payments_total(PDO $pdo, string $date): float
             FROM dealer_payments
             WHERE payment_date = :d
               AND entry_type IN ('advance_payment', 'dealer_payment')
+              AND linked_wallet_txn_id IS NULL
         ");
         $stmt->execute([':d' => $date]);
         return (float) $stmt->fetchColumn();
@@ -134,7 +142,13 @@ function dealer_payments_total(PDO $pdo, string $date): float
 function non_cash_wallet_sum(PDO $pdo, string $date, string $type): float
 {
     $stmt = $pdo->prepare("
-        SELECT COALESCE(SUM(wt.amount), 0)
+        SELECT COALESCE(SUM(
+            CASE
+                WHEN wt.type = 'receiving' AND wt.payment_status <> 'cancelled' THEN wt.amount
+                WHEN wt.type = 'sending' AND wt.payment_status = 'completed' THEN wt.amount
+                ELSE 0
+            END
+        ), 0)
         FROM wallet_transactions wt
         JOIN accounts a ON a.id = wt.account_id
         WHERE a.account_type IN ('easypaisa', 'jazzcash', 'bank')
@@ -143,6 +157,24 @@ function non_cash_wallet_sum(PDO $pdo, string $date, string $type): float
           AND (wt.remarks IS NULL OR wt.remarks NOT LIKE 'Bank Deposit #%' )
     ");
     $stmt->execute([':date' => $date, ':type' => $type]);
+    return (float) $stmt->fetchColumn();
+}
+
+function wallet_commission_total(PDO $pdo, string $date): float
+{
+    $stmt = $pdo->prepare("
+        SELECT COALESCE(SUM(
+            CASE
+                WHEN wt.type = 'opening' THEN 0
+                WHEN wt.type = 'receiving' AND wt.payment_status <> 'cancelled' THEN wt.charges
+                WHEN wt.type = 'sending' AND wt.payment_status = 'completed' THEN wt.charges
+                ELSE 0
+            END
+        ), 0)
+        FROM wallet_transactions wt
+        WHERE wt.date = :date
+    ");
+    $stmt->execute([':date' => $date]);
     return (float) $stmt->fetchColumn();
 }
 
@@ -159,6 +191,7 @@ $udharRecovery = udhar_recovery_total($pdo, $date);
 $creditAdvance = credit_advance_total($pdo, $date);
 $expensesTotal = expenses_total($pdo, $date);
 $dealerPayments = dealer_payments_total($pdo, $date);
+$commissionEarned = wallet_commission_total($pdo, $date);
 
 $cashReceivedTotal = $walletCashReceived + $salesTotal + $loadSales + $udharRecovery + $creditAdvance + $nonCashSending;
 $cashSentTotal = $walletCashSent + $expensesTotal + $dealerPayments + $nonCashReceiving;
@@ -347,6 +380,12 @@ require_once __DIR__ . '/../includes/sidebar.php';
         </div>
     </div>
     <div class="col-12 col-md-3">
+        <div class="p-3 bg-light rounded-4 border-start border-success border-4 h-100 transition-all hover-lift">
+            <div class="text-muted small fw-medium mb-1 text-uppercase tracking-wider">Commission Income</div>
+            <div class="h4 mb-0 font-bold text-success"><?= h(number_format($commissionEarned, 2)) ?></div>
+        </div>
+    </div>
+    <div class="col-12 col-md-3">
         <div class="p-3 bg-gradient-premium rounded-4 border-0 h-100 transition-all hover-lift text-white shadow">
             <div class="text-white-50 small fw-medium mb-1 text-uppercase tracking-wider">Expected Cash (Drawer)</div>
             <div class="h3 mb-0 font-bold"><?= h(number_format($expectedCash, 2)) ?></div>
@@ -407,6 +446,10 @@ require_once __DIR__ . '/../includes/sidebar.php';
                         <tr class="transition-all hover-bg-light bg-danger bg-opacity-10">
                             <td class="px-3 py-3 border-0 border-bottom text-gray-700">Dealer Payments</td>
                             <td class="px-3 py-3 border-0 border-bottom text-end font-medium text-danger">- <?= h(number_format($dealerPayments, 2)) ?></td>
+                        </tr>
+                        <tr class="transition-all hover-bg-light">
+                            <td class="px-3 py-3 border-0 border-bottom text-gray-700">Commission Income</td>
+                            <td class="px-3 py-3 border-0 border-bottom text-end font-medium text-success">+ <?= h(number_format($commissionEarned, 2)) ?></td>
                         </tr>
                         </tbody>
                     </table>
