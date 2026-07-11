@@ -393,8 +393,8 @@ function wallet_search_totals(PDO $pdo, int $accountId, string $query): array
             COALESCE(SUM(CASE WHEN type='sending' AND payment_status = 'completed' THEN amount ELSE 0 END), 0) AS sending_total,
             COALESCE(SUM(CASE WHEN type='sending' AND payment_status = 'completed' THEN account_amount ELSE 0 END), 0) AS account_deduction_total,
             COALESCE(SUM(CASE WHEN type <> 'opening' AND payment_status <> 'cancelled' AND (type <> 'sending' OR payment_status = 'completed') THEN charges ELSE 0 END), 0) AS commission_total,
-            COALESCE(SUM(CASE WHEN type='sending' AND payment_status='pending' THEN amount ELSE 0 END), 0) AS pending_amount_total,
-            COALESCE(SUM(CASE WHEN type='sending' AND payment_status='pending' THEN 1 ELSE 0 END), 0) AS pending_rows
+            COALESCE(SUM(CASE WHEN type='receiving' AND payment_status='pending' THEN amount ELSE 0 END), 0) AS pending_amount_total,
+            COALESCE(SUM(CASE WHEN type='receiving' AND payment_status='pending' THEN 1 ELSE 0 END), 0) AS pending_rows
         FROM wallet_transactions
         WHERE account_id = :account_id
           AND (

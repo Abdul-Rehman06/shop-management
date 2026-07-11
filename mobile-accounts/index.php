@@ -89,20 +89,20 @@ $wallet_effective_account_amount = static function (string $txnType, float $amou
 };
 
 $wallet_effective_status = static function (string $txnType, string $status): string {
-    if ($txnType !== 'sending') {
+    if ($txnType === 'opening') {
         return 'completed';
     }
     return in_array($status, ['pending', 'completed', 'cancelled'], true) ? $status : 'completed';
 };
 
 $wallet_effective_completed_at = static function (string $txnType, string $status, ?string $existingCompletedAt = null): ?string {
-    if ($txnType === 'sending') {
-        if ($status === 'completed') {
-            return ($existingCompletedAt !== null && trim($existingCompletedAt) !== '') ? $existingCompletedAt : date('Y-m-d H:i:s');
-        }
-        return null;
+    if ($txnType === 'opening') {
+        return ($existingCompletedAt !== null && trim($existingCompletedAt) !== '') ? $existingCompletedAt : date('Y-m-d H:i:s');
     }
-    return ($existingCompletedAt !== null && trim($existingCompletedAt) !== '') ? $existingCompletedAt : date('Y-m-d H:i:s');
+    if ($status === 'completed') {
+        return ($existingCompletedAt !== null && trim($existingCompletedAt) !== '') ? $existingCompletedAt : date('Y-m-d H:i:s');
+    }
+    return null;
 };
 
 $wallet_find_pending_payment = static function (PDO $pdo, string $customerName, string $number, int $excludeId = 0): ?array {
@@ -123,7 +123,7 @@ $wallet_find_pending_payment = static function (PDO $pdo, string $customerName, 
         SELECT wt.id, wt.date, wt.amount, wt.customer_name, wt.number, a.account_name
         FROM wallet_transactions wt
         JOIN accounts a ON a.id = wt.account_id
-        WHERE wt.type = 'sending'
+        WHERE wt.type = 'receiving'
           AND wt.payment_status = 'pending'
     ";
     if ($excludeId > 0) {
@@ -210,7 +210,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $commissionMethod = 'separate_cash';
             }
             $paymentStatus = $wallet_effective_status($entryType, $paymentStatus);
-            if ($entryType === 'sending') {
+            if ($entryType === 'receiving') {
                 $pendingExisting = $wallet_find_pending_payment($pdo, $customerName, $number);
                 if ($pendingExisting) {
                     flash_set('error', 'Pending Payment Exists for this customer. Please complete or cancel the existing pending record first.');
@@ -305,7 +305,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             app_redirect($returnUrl);
         }
         $txnPaymentStatus = $wallet_effective_status($txnType, $txnPaymentStatus);
-        if ($txnType === 'sending') {
+        if ($txnType === 'receiving') {
             $pendingExisting = $wallet_find_pending_payment($pdo, $txnCustomer, $txnNumber, $txnId);
             if ($pendingExisting) {
                 flash_set('error', 'Pending Payment Exists for this customer. Please complete or cancel the existing pending record first.');
@@ -508,8 +508,8 @@ function get_daily_stats(PDO $pdo, int $accountId, string $date): array {
             COALESCE(SUM(CASE WHEN type = 'sending' AND payment_status = 'completed' THEN amount ELSE 0 END), 0) AS sent,
             COALESCE(SUM(CASE WHEN type = 'sending' AND payment_status = 'completed' THEN account_amount ELSE 0 END), 0) AS account_deduction,
             COALESCE(SUM(CASE WHEN type <> 'opening' AND payment_status <> 'cancelled' AND (type <> 'sending' OR payment_status = 'completed') THEN charges ELSE 0 END), 0) AS commission,
-            COALESCE(SUM(CASE WHEN type = 'sending' AND payment_status = 'pending' THEN amount ELSE 0 END), 0) AS pending_amount,
-            COALESCE(SUM(CASE WHEN type = 'sending' AND payment_status = 'pending' THEN 1 ELSE 0 END), 0) AS pending_count
+            COALESCE(SUM(CASE WHEN type = 'receiving' AND payment_status = 'pending' THEN amount ELSE 0 END), 0) AS pending_amount,
+            COALESCE(SUM(CASE WHEN type = 'receiving' AND payment_status = 'pending' THEN 1 ELSE 0 END), 0) AS pending_count
         FROM wallet_transactions
         WHERE account_id = ?
           AND date = ?
@@ -813,8 +813,8 @@ if ($tab === 'search') {
             COALESCE(SUM(CASE WHEN wt.type='sending' AND wt.payment_status = 'completed' THEN wt.amount ELSE 0 END), 0) AS total_sending,
             COALESCE(SUM(CASE WHEN wt.type='sending' AND wt.payment_status = 'completed' THEN wt.account_amount ELSE 0 END), 0) AS total_account_deduction,
             COALESCE(SUM(CASE WHEN wt.type <> 'opening' AND wt.payment_status <> 'cancelled' AND (wt.type <> 'sending' OR wt.payment_status = 'completed') THEN wt.charges ELSE 0 END), 0) AS total_commission,
-            COALESCE(SUM(CASE WHEN wt.type='sending' AND wt.payment_status='pending' THEN wt.amount ELSE 0 END), 0) AS total_pending_amount,
-            COALESCE(SUM(CASE WHEN wt.type='sending' AND wt.payment_status='pending' THEN 1 ELSE 0 END), 0) AS total_pending_count
+            COALESCE(SUM(CASE WHEN wt.type='receiving' AND wt.payment_status='pending' THEN wt.amount ELSE 0 END), 0) AS total_pending_amount,
+            COALESCE(SUM(CASE WHEN wt.type='receiving' AND wt.payment_status='pending' THEN 1 ELSE 0 END), 0) AS total_pending_count
         FROM wallet_transactions wt
         JOIN accounts a ON a.id = wt.account_id
         {$where}

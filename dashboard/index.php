@@ -105,7 +105,18 @@ $walletOpenForDate = function (PDO $pdo, int $accountId, string $date): float {
     return (float) $stmt->fetchColumn();
 };
 
-    $walletAll = ['opening' => 0.0, 'receiving' => 0.0, 'sending' => 0.0, 'closing' => 0.0];
+$walletAll = ['opening' => 0.0, 'receiving' => 0.0, 'sending' => 0.0, 'closing' => 0.0];
+$rangeExpense = 0.0;
+$rangeSales = 0.0;
+$rangeProfit = 0.0;
+$rangeDealerPayments = 0.0;
+$rangeLoadSold = 0.0;
+$rangeUdharRecovery = 0.0;
+$rangeCreditAdvance = 0.0;
+$rangeWalletCommission = 0.0;
+$rangeWalletAccountDeduction = 0.0;
+$rangePendingPayments = 0;
+$rangePendingAmount = 0.0;
 try {
     $stmt = $pdo->query("SELECT id FROM accounts WHERE status = 'active'");
     $accountIds = array_map(static fn (array $r): int => (int) ($r['id'] ?? 0), $stmt->fetchAll());
@@ -120,8 +131,8 @@ try {
                 COALESCE(SUM(CASE WHEN type = 'sending' AND payment_status = 'completed' THEN amount ELSE 0 END), 0) AS sending_total,
                 COALESCE(SUM(CASE WHEN type = 'sending' AND payment_status = 'completed' THEN account_amount ELSE 0 END), 0) AS account_deduction_total,
                 COALESCE(SUM(CASE WHEN type <> 'opening' AND payment_status <> 'cancelled' AND (type <> 'sending' OR payment_status = 'completed') THEN charges ELSE 0 END), 0) AS commission_total,
-                COALESCE(SUM(CASE WHEN type = 'sending' AND payment_status = 'pending' THEN 1 ELSE 0 END), 0) AS pending_count,
-                COALESCE(SUM(CASE WHEN type = 'sending' AND payment_status = 'pending' THEN amount ELSE 0 END), 0) AS pending_amount
+                COALESCE(SUM(CASE WHEN type = 'receiving' AND payment_status = 'pending' THEN 1 ELSE 0 END), 0) AS pending_count,
+                COALESCE(SUM(CASE WHEN type = 'receiving' AND payment_status = 'pending' THEN amount ELSE 0 END), 0) AS pending_amount
             FROM wallet_transactions
             WHERE account_id = ?
               AND date >= ?
@@ -145,18 +156,6 @@ try {
     }
 } catch (Throwable $e) {
 }
-
-$rangeExpense = 0.0;
-$rangeSales = 0.0;
-$rangeProfit = 0.0;
-$rangeDealerPayments = 0.0;
-$rangeLoadSold = 0.0;
-$rangeUdharRecovery = 0.0;
-$rangeCreditAdvance = 0.0;
-$rangeWalletCommission = 0.0;
-$rangeWalletAccountDeduction = 0.0;
-$rangePendingPayments = 0;
-$rangePendingAmount = 0.0;
 
 try {
     $stmt = $pdo->prepare("SELECT COALESCE(SUM(amount), 0) FROM expenses WHERE date >= :from AND date <= :to");

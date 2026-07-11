@@ -150,7 +150,7 @@ function report_fetch(PDO $pdo, array $filters): array
             } elseif ($typeValue === 'sending' && $statusValue === 'completed') {
                 $sending += (float) ($r['amount'] ?? 0);
                 $accountDeduction += (float) ($r['account_amount'] ?? 0);
-            } elseif ($typeValue === 'sending' && $statusValue === 'pending') {
+            } elseif ($typeValue === 'receiving' && $statusValue === 'pending') {
                 $pendingCount++;
                 $pendingAmount += (float) ($r['amount'] ?? 0);
             }
