@@ -81,6 +81,7 @@ $syncDealerPaymentWallet = static function (PDO $pdo, int $dealerPaymentId, stri
         ':transaction_id' => 'DEALER-' . $dealerPaymentId,
         ':txn_amount' => $amount,
         ':account_amount' => $amount,
+        ':entry_context' => ((string) ($account['account_type'] ?? '') === 'cash') ? 'external' : 'dealer_payment_online',
         ':remarks' => 'Dealer payment #' . $dealerPaymentId . ' - ' . $dealer . ' (' . $network . ')',
     ];
 
@@ -100,6 +101,7 @@ $syncDealerPaymentWallet = static function (PDO $pdo, int $dealerPaymentId, stri
                 account_amount = :account_amount,
                 payment_status = 'completed',
                 completed_at = NOW(),
+                entry_context = :entry_context,
                 remarks = :remarks
             WHERE id = :id
         ");
@@ -109,9 +111,9 @@ $syncDealerPaymentWallet = static function (PDO $pdo, int $dealerPaymentId, stri
 
     $stmt = $pdo->prepare("
         INSERT INTO wallet_transactions
-            (account_id, date, customer_name, number, transaction_id, type, amount, charges, commission_method, account_amount, payment_status, completed_at, remarks)
+            (account_id, date, customer_name, number, transaction_id, type, amount, charges, commission_method, account_amount, payment_status, completed_at, entry_context, remarks)
         VALUES
-            (:account_id, :date, :customer_name, :number, :transaction_id, 'sending', :txn_amount, 0, 'separate_cash', :account_amount, 'completed', NOW(), :remarks)
+            (:account_id, :date, :customer_name, :number, :transaction_id, 'sending', :txn_amount, 0, 'separate_cash', :account_amount, 'completed', NOW(), :entry_context, :remarks)
     ");
     $stmt->execute($payload);
     return (int) $pdo->lastInsertId();

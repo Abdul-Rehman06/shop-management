@@ -137,6 +137,76 @@ $wallet_find_pending_payment = static function (PDO $pdo, string $customerName, 
     return is_array($row) ? $row : null;
 };
 
+$wallet_ensure_opening_for_date = static function (PDO $pdo, int $accountId, string $entryDate) use ($wallet_get_opening_txn, $wallet_compute_auto_opening): void {
+    $openingRow = $wallet_get_opening_txn($pdo, $accountId, $entryDate);
+    if ($openingRow) {
+        return;
+    }
+
+    $autoOpening = $wallet_compute_auto_opening($pdo, $accountId, $entryDate);
+    $stmt = $pdo->prepare("INSERT INTO wallet_transactions (account_id, date, type, amount) VALUES (?, ?, 'opening', ?)");
+    $stmt->execute([$accountId, $entryDate, $autoOpening]);
+};
+
+$wallet_create_internal_transfer = static function (PDO $pdo, int $fromAccountId, int $toAccountId, string $entryDate, float $amount, string $remarks = '') use ($wallet_ensure_opening_for_date): array {
+    $fromAccount = wallet_account($pdo, $fromAccountId);
+    $toAccount = wallet_account($pdo, $toAccountId);
+    if (!$fromAccount || !$toAccount) {
+        throw new RuntimeException('Invalid transfer account selected.');
+    }
+    if ($fromAccountId === $toAccountId) {
+        throw new RuntimeException('From and To accounts must be different.');
+    }
+
+    $wallet_ensure_opening_for_date($pdo, $fromAccountId, $entryDate);
+    $wallet_ensure_opening_for_date($pdo, $toAccountId, $entryDate);
+
+    $transferGroupId = 'ITR-' . date('YmdHis') . '-' . random_int(1000, 9999);
+    $baseRemark = 'Internal Transfer: ' . (string) ($fromAccount['account_name'] ?? 'From Account') . ' -> ' . (string) ($toAccount['account_name'] ?? 'To Account');
+    $finalRemark = $remarks !== '' ? ($baseRemark . ' | ' . $remarks) : $baseRemark;
+
+    $stmt = $pdo->prepare("
+        INSERT INTO wallet_transactions
+            (account_id, date, customer_name, number, transaction_id, type, amount, charges, commission_method, account_amount, payment_status, completed_at, entry_context, linked_txn_id, transfer_group_id, remarks)
+        VALUES
+            (:account_id, :date, 'Internal Transfer', NULL, :transaction_id, :type, :amount, 0, 'separate_cash', :account_amount, 'completed', NOW(), 'internal_transfer', NULL, :transfer_group_id, :remarks)
+    ");
+
+    $stmt->execute([
+        ':account_id' => $fromAccountId,
+        ':date' => $entryDate,
+        ':transaction_id' => $transferGroupId,
+        ':type' => 'sending',
+        ':amount' => $amount,
+        ':account_amount' => $amount,
+        ':transfer_group_id' => $transferGroupId,
+        ':remarks' => $finalRemark,
+    ]);
+    $fromTxnId = (int) $pdo->lastInsertId();
+
+    $stmt->execute([
+        ':account_id' => $toAccountId,
+        ':date' => $entryDate,
+        ':transaction_id' => $transferGroupId,
+        ':type' => 'receiving',
+        ':amount' => $amount,
+        ':account_amount' => $amount,
+        ':transfer_group_id' => $transferGroupId,
+        ':remarks' => $finalRemark,
+    ]);
+    $toTxnId = (int) $pdo->lastInsertId();
+
+    $linkStmt = $pdo->prepare("UPDATE wallet_transactions SET linked_txn_id = :linked_txn_id WHERE id = :id");
+    $linkStmt->execute([':linked_txn_id' => $toTxnId, ':id' => $fromTxnId]);
+    $linkStmt->execute([':linked_txn_id' => $fromTxnId, ':id' => $toTxnId]);
+
+    return [
+        'group_id' => $transferGroupId,
+        'from_txn_id' => $fromTxnId,
+        'to_txn_id' => $toTxnId,
+    ];
+};
+
 // Handle Form Submissions
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = $_POST['action'] ?? '';
@@ -217,15 +287,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     app_redirect($returnUrl);
                 }
             }
-            $openingRow = $wallet_get_opening_txn($pdo, $accountId, $date);
-            if (!$openingRow) {
-                $autoOpening = $wallet_compute_auto_opening($pdo, $accountId, $date);
-                $stmt = $pdo->prepare("INSERT INTO wallet_transactions (account_id, date, type, amount) VALUES (?, ?, 'opening', ?)");
-                $stmt->execute([$accountId, $date, $autoOpening]);
-            }
+            $wallet_ensure_opening_for_date($pdo, $accountId, $date);
             $accountAmount = $wallet_effective_account_amount($entryType, $amount, $charges, $commissionMethod);
             $completedAt = $wallet_effective_completed_at($entryType, $paymentStatus);
-            $stmt = $pdo->prepare("INSERT INTO wallet_transactions (account_id, date, type, amount, charges, commission_method, account_amount, payment_status, completed_at, customer_name, number, transaction_id, remarks) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+            $stmt = $pdo->prepare("INSERT INTO wallet_transactions (account_id, date, type, amount, charges, commission_method, account_amount, payment_status, completed_at, entry_context, linked_txn_id, transfer_group_id, customer_name, number, transaction_id, remarks) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'external', NULL, NULL, ?, ?, ?, ?)");
             $stmt->execute([
                 $accountId, $date, $entryType, $amount, $charges, $commissionMethod, $accountAmount, $paymentStatus, $completedAt,
                 $customerName !== '' ? $customerName : null,
@@ -250,6 +315,35 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } else {
             flash_set('error', 'Invalid account or amount.');
         }
+    } elseif ($action === 'internal_transfer') {
+        $transferDate = trim((string) ($_POST['transfer_date'] ?? $date));
+        $fromAccountId = (int) ($_POST['from_account_id'] ?? 0);
+        $toAccountId = (int) ($_POST['to_account_id'] ?? 0);
+        $transferAmount = trim((string) ($_POST['transfer_amount'] ?? ''));
+        $transferRemarks = trim((string) ($_POST['transfer_remarks'] ?? ''));
+
+        if ($transferDate === '') {
+            flash_set('error', 'Transfer date is required.');
+        } elseif ($fromAccountId <= 0 || $toAccountId <= 0) {
+            flash_set('error', 'Please select both From and To accounts.');
+        } elseif ($fromAccountId === $toAccountId) {
+            flash_set('error', 'From and To accounts must be different.');
+        } elseif ($transferAmount === '' || !is_numeric($transferAmount) || (float) $transferAmount <= 0) {
+            flash_set('error', 'Transfer amount must be a positive number.');
+        } else {
+            $pdo->beginTransaction();
+            try {
+                $wallet_create_internal_transfer($pdo, $fromAccountId, $toAccountId, $transferDate, (float) $transferAmount, $transferRemarks);
+                $pdo->commit();
+                flash_set('success', 'Internal transfer saved. Both accounts have been updated.');
+            } catch (Throwable $e) {
+                if ($pdo->inTransaction()) {
+                    $pdo->rollBack();
+                }
+                flash_set('error', 'Could not save internal transfer.');
+            }
+        }
+        app_redirect($returnUrl);
     } elseif ($action === 'update_txn') {
         if (!$canEditDelete) {
             flash_set('error', 'Access denied.');
@@ -302,6 +396,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $before = $stmt->fetch() ?: null;
         if (!$before) {
             flash_set('error', 'Transaction not found.');
+            app_redirect($returnUrl);
+        }
+        if ((string) ($before['entry_context'] ?? 'external') === 'internal_transfer') {
+            flash_set('error', 'Internal transfer entries cannot be edited individually. Please delete and recreate the transfer.');
             app_redirect($returnUrl);
         }
         $txnPaymentStatus = $wallet_effective_status($txnType, $txnPaymentStatus);
@@ -390,13 +488,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             flash_set('error', 'Transaction not found.');
             app_redirect($returnUrl);
         }
-
-        $stmt = $pdo->prepare('DELETE FROM wallet_transactions WHERE id = :id');
-        $stmt->execute([':id' => $txnId]);
+        $deleteIds = [$txnId];
+        if ((string) ($before['entry_context'] ?? 'external') === 'internal_transfer' && (int) ($before['linked_txn_id'] ?? 0) > 0) {
+            $deleteIds[] = (int) ($before['linked_txn_id'] ?? 0);
+        }
+        $deleteIds = array_values(array_unique(array_filter($deleteIds, static fn (int $id): bool => $id > 0)));
+        $in = implode(',', array_fill(0, count($deleteIds), '?'));
+        $stmt = $pdo->prepare("DELETE FROM wallet_transactions WHERE id IN ($in)");
+        $stmt->execute($deleteIds);
 
         app_audit_log('wallet_transactions', $txnId, 'delete', is_array($before) ? $before : null, null);
 
-        flash_set('success', 'Transaction deleted.');
+        flash_set('success', (string) ($before['entry_context'] ?? 'external') === 'internal_transfer' ? 'Internal transfer deleted from both accounts.' : 'Transaction deleted.');
         app_redirect($returnUrl);
     }
     
@@ -795,7 +898,7 @@ if ($tab === 'search') {
 
     $stmt = $pdo->prepare("
         SELECT
-            wt.id, wt.date, wt.created_at, wt.type, wt.amount, wt.charges, wt.commission_method, wt.account_amount, wt.payment_status, wt.completed_at, wt.customer_name, wt.number, wt.transaction_id, wt.remarks,
+            wt.id, wt.date, wt.created_at, wt.type, wt.amount, wt.charges, wt.commission_method, wt.account_amount, wt.payment_status, wt.completed_at, wt.customer_name, wt.number, wt.transaction_id, wt.remarks, wt.entry_context, wt.linked_txn_id, wt.transfer_group_id,
             a.account_name, a.account_type
         FROM wallet_transactions wt
         JOIN accounts a ON a.id = wt.account_id
@@ -855,6 +958,7 @@ if ($editTxnId > 0 && $canEditDelete) {
     $stmt->execute([':id' => $editTxnId]);
     $editTxn = $stmt->fetch() ?: null;
 }
+$isInternalTransferEdit = $editTxn && (string) ($editTxn['entry_context'] ?? 'external') === 'internal_transfer';
 ?>
 
 <!-- Header -->
@@ -906,7 +1010,7 @@ if ($editTxnId > 0 && $canEditDelete) {
     <div class="alert alert-danger border-0 shadow-sm rounded-2xl mb-6 animate-slide-up"><?= h($error) ?></div>
 <?php endif; ?>
 
-<?php if ($editTxn && $canEditDelete): ?>
+<?php if ($editTxn && $canEditDelete && !$isInternalTransferEdit): ?>
     <div class="glass-card rounded-3xl p-6 mb-8 animate-slide-up relative overflow-hidden">
         <div class="absolute top-0 left-0 w-full h-1 bg-gradient-premium"></div>
         <div class="flex items-center justify-between mb-6">
@@ -1003,6 +1107,12 @@ if ($editTxnId > 0 && $canEditDelete) {
                 <button class="btn btn-gradient rounded-xl px-8 shadow-md hover:shadow-lg w-full md:w-auto">Save Changes</button>
             </div>
         </form>
+    </div>
+<?php endif; ?>
+
+<?php if ($isInternalTransferEdit): ?>
+    <div class="alert alert-warning border-0 shadow-sm rounded-2xl mb-6 animate-slide-up">
+        Internal transfer entries cannot be edited individually. Please delete the transfer and create a new one from the Internal Transfer form.
     </div>
 <?php endif; ?>
 
@@ -1162,13 +1272,16 @@ if ($editTxnId > 0 && $canEditDelete) {
                         <td><?= h((string) ($r['remarks'] ?? '')) ?></td>
                         <?php if ($canEditDelete): ?>
                             <?php
+                            $isTransferRow = (string) ($r['entry_context'] ?? 'external') === 'internal_transfer';
                             $editParams = $_GET;
                             $editParams['edit_txn_id'] = (int) ($r['id'] ?? 0);
                             $editQuery = http_build_query($editParams);
                             $editUrl = 'mobile-accounts/index.php' . ($editQuery !== '' ? ('?' . $editQuery) : '');
                             ?>
                             <td class="text-end">
-                                <a class="btn btn-outline-secondary btn-sm" href="<?= h(app_url($editUrl)) ?>">Edit</a>
+                                <?php if (!$isTransferRow): ?>
+                                    <a class="btn btn-outline-secondary btn-sm" href="<?= h(app_url($editUrl)) ?>">Edit</a>
+                                <?php endif; ?>
                                 <form method="post" class="d-inline" onsubmit="return confirm('Delete this transaction?');">
                                     <input type="hidden" name="action" value="delete_txn">
                                     <input type="hidden" name="txn_id" value="<?= (int) ($r['id'] ?? 0) ?>">
@@ -1459,6 +1572,69 @@ if ($editTxnId > 0 && $canEditDelete) {
     </div>
 </div>
 
+<div class="glass-card rounded-3xl mb-8 animate-slide-up stagger-4 relative overflow-hidden">
+    <div class="absolute top-0 left-0 w-1 h-full bg-indigo-400"></div>
+    <div class="p-6 border-b border-gray-100 bg-white/40 flex items-center justify-between">
+        <div class="flex items-center gap-3">
+            <div class="p-2 bg-indigo-50 text-indigo-600 rounded-lg"><i data-lucide="arrow-left-right" class="w-5 h-5"></i></div>
+            <div>
+                <h3 class="text-lg font-bold text-gray-900 m-0">Internal Transfer</h3>
+                <p class="text-xs text-gray-500 mt-1">Move balance between your own accounts without affecting the cash drawer</p>
+            </div>
+        </div>
+    </div>
+    <div class="p-6">
+        <form method="post" action="" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-5">
+            <input type="hidden" name="action" value="internal_transfer">
+            <input type="hidden" name="return_url" value="<?= h($returnUrl) ?>">
+            <input type="hidden" name="date" value="<?= h((string) $currentDate) ?>">
+            <input type="hidden" name="type" value="<?= h((string) $currentType) ?>">
+            <input type="hidden" name="account_id_filter" value="<?= h((string) $currentAccountId) ?>">
+
+            <div>
+                <label class="form-label text-xs uppercase tracking-wider text-gray-500 mb-1">Date</label>
+                <input type="date" name="transfer_date" value="<?= h($currentDate) ?>" class="form-control bg-gray-50 border-0 shadow-sm rounded-xl" required>
+            </div>
+            <div>
+                <label class="form-label text-xs uppercase tracking-wider text-gray-500 mb-1">From Account</label>
+                <select name="from_account_id" class="form-select bg-gray-50 border-0 shadow-sm rounded-xl" required>
+                    <option value="">Select account</option>
+                    <?php foreach ($allAccounts as $a): ?>
+                        <option value="<?= (int) $a['id'] ?>"><?= h((string) $a['account_name']) ?> (<?= h((string) $a['account_type']) ?>)</option>
+                    <?php endforeach; ?>
+                </select>
+            </div>
+            <div>
+                <label class="form-label text-xs uppercase tracking-wider text-gray-500 mb-1">To Account</label>
+                <select name="to_account_id" class="form-select bg-gray-50 border-0 shadow-sm rounded-xl" required>
+                    <option value="">Select account</option>
+                    <?php foreach ($allAccounts as $a): ?>
+                        <option value="<?= (int) $a['id'] ?>"><?= h((string) $a['account_name']) ?> (<?= h((string) $a['account_type']) ?>)</option>
+                    <?php endforeach; ?>
+                </select>
+            </div>
+            <div>
+                <label class="form-label text-xs uppercase tracking-wider text-gray-500 mb-1">Amount (Rs)</label>
+                <input type="number" step="0.01" name="transfer_amount" class="form-control bg-white border border-gray-200 shadow-sm rounded-xl text-lg font-bold text-gray-900" required placeholder="0.00">
+            </div>
+            <div class="md:col-span-5">
+                <label class="form-label text-xs uppercase tracking-wider text-gray-500 mb-1">Note</label>
+                <input type="text" name="transfer_remarks" class="form-control bg-gray-50 border-0 shadow-sm rounded-xl" placeholder="Optional note for this transfer">
+            </div>
+            <div class="md:col-span-5">
+                <div class="text-xs text-gray-500 bg-indigo-50 rounded-xl px-4 py-3 border border-indigo-100">
+                    Rule:
+                    <strong>Internal Transfer</strong> creates one sending entry and one receiving entry automatically.
+                    It updates both accounts, but it does <strong>not</strong> change the cash drawer.
+                </div>
+            </div>
+            <div class="md:col-span-5 mt-2">
+                <button type="submit" class="btn btn-outline-primary rounded-xl px-8 py-3 shadow-sm hover:shadow-md w-full md:w-auto text-base font-bold"><i data-lucide="arrow-left-right" class="w-5 h-5 mr-2"></i> Save Internal Transfer</button>
+            </div>
+        </form>
+    </div>
+</div>
+
 <div class="glass-card rounded-3xl p-6 mb-8 animate-slide-up shadow-sm hidden relative overflow-hidden" id="add_customer_panel">
     <div class="absolute top-0 left-0 w-1 h-full bg-blue-400"></div>
     <div class="flex items-center justify-between mb-6">
@@ -1586,13 +1762,16 @@ if ($editTxnId > 0 && $canEditDelete) {
                             <td class="py-3 px-4 text-gray-500"><?= h((string)$t['remarks']) ?: '-' ?></td>
                             <?php if ($canEditDelete): ?>
                                 <?php
+                                $isTransferRow = (string) ($t['entry_context'] ?? 'external') === 'internal_transfer';
                                 $editParams = $_GET;
                                 $editParams['edit_txn_id'] = (int) ($t['id'] ?? 0);
                                 $editQuery = http_build_query($editParams);
                                 $editUrl = 'mobile-accounts/index.php' . ($editQuery !== '' ? ('?' . $editQuery) : '');
                                 ?>
                                 <td class="py-3 px-4 text-end">
-                                    <a class="btn btn-outline-secondary btn-sm" href="<?= h(app_url($editUrl)) ?>">Edit</a>
+                                    <?php if (!$isTransferRow): ?>
+                                        <a class="btn btn-outline-secondary btn-sm" href="<?= h(app_url($editUrl)) ?>">Edit</a>
+                                    <?php endif; ?>
                                     <form method="post" class="d-inline" onsubmit="return confirm('Delete this transaction?');">
                                         <input type="hidden" name="action" value="delete_txn">
                                         <input type="hidden" name="txn_id" value="<?= (int) ($t['id'] ?? 0) ?>">

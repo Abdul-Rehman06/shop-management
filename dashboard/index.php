@@ -475,6 +475,7 @@ try {
         WHERE a.account_type = 'cash'
           AND wt.date = CURDATE()
           AND wt.type = 'opening'
+          AND COALESCE(wt.entry_context, 'external') <> 'internal_transfer'
     ")->fetchColumn();
     $walletCashReceiving = (float) $pdo->query("
         SELECT COALESCE(SUM(
@@ -488,6 +489,7 @@ try {
         WHERE a.account_type = 'cash'
           AND wt.date = CURDATE()
           AND wt.type = 'receiving'
+          AND COALESCE(wt.entry_context, 'external') <> 'internal_transfer'
     ")->fetchColumn();
     $walletCashSending = (float) $pdo->query("
         SELECT COALESCE(SUM(
@@ -501,6 +503,7 @@ try {
         WHERE a.account_type = 'cash'
           AND wt.date = CURDATE()
           AND wt.type = 'sending'
+          AND COALESCE(wt.entry_context, 'external') <> 'internal_transfer'
     ")->fetchColumn();
     $cashCommissionToday = (float) $pdo->query("
         SELECT COALESCE(SUM(

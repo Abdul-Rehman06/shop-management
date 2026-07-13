@@ -48,6 +48,7 @@ function cash_sum_wallet(PDO $pdo, string $date, string $type): float
         WHERE a.account_type = 'cash'
           AND wt.date = :date
           AND wt.type = :type
+          AND COALESCE(wt.entry_context, 'external') <> 'internal_transfer'
     ");
     $stmt->execute([':date' => $date, ':type' => $type]);
     return (float) $stmt->fetchColumn();
@@ -154,6 +155,8 @@ function non_cash_wallet_sum(PDO $pdo, string $date, string $type): float
         WHERE a.account_type IN ('easypaisa', 'jazzcash', 'bank')
           AND wt.date = :date
           AND wt.type = :type
+          AND COALESCE(wt.entry_context, 'external') NOT IN ('internal_transfer', 'dealer_payment_online')
+          AND (wt.remarks IS NULL OR wt.remarks NOT LIKE 'Dealer payment #%')
           AND (wt.remarks IS NULL OR wt.remarks NOT LIKE 'Bank Deposit #%' )
     ");
     $stmt->execute([':date' => $date, ':type' => $type]);

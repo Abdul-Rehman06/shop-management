@@ -34,6 +34,9 @@ function wallet_ensure_schema(PDO $pdo): void
             account_amount DECIMAL(12,2) NOT NULL DEFAULT 0.00,
             payment_status VARCHAR(20) NOT NULL DEFAULT 'completed',
             completed_at DATETIME NULL,
+            entry_context VARCHAR(40) NOT NULL DEFAULT 'external',
+            linked_txn_id BIGINT UNSIGNED NULL,
+            transfer_group_id VARCHAR(120) NULL,
             remarks VARCHAR(255) NULL,
             created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
             PRIMARY KEY (id),
@@ -41,6 +44,9 @@ function wallet_ensure_schema(PDO $pdo): void
             KEY idx_wallet_account (account_id),
             KEY idx_wallet_type (type),
             KEY idx_wallet_status (payment_status),
+            KEY idx_wallet_context (entry_context),
+            KEY idx_wallet_linked_txn (linked_txn_id),
+            KEY idx_wallet_transfer_group (transfer_group_id),
             KEY idx_wallet_number (number),
             KEY idx_wallet_transaction_id (transaction_id),
             CONSTRAINT fk_wallet_account FOREIGN KEY (account_id) REFERENCES accounts(id) ON UPDATE CASCADE
@@ -78,6 +84,33 @@ function wallet_ensure_schema(PDO $pdo): void
         if (!(bool) $stmt->fetchColumn()) {
             $pdo->exec("ALTER TABLE wallet_transactions ADD COLUMN completed_at DATETIME NULL AFTER payment_status");
             $pdo->exec("UPDATE wallet_transactions SET completed_at = created_at WHERE completed_at IS NULL AND payment_status = 'completed' AND type IN ('receiving','sending')");
+        }
+    } catch (Throwable $e) {
+    }
+
+    try {
+        $stmt = $pdo->query("SHOW COLUMNS FROM wallet_transactions LIKE 'entry_context'");
+        if (!(bool) $stmt->fetchColumn()) {
+            $pdo->exec("ALTER TABLE wallet_transactions ADD COLUMN entry_context VARCHAR(40) NOT NULL DEFAULT 'external' AFTER completed_at");
+            $pdo->exec("ALTER TABLE wallet_transactions ADD KEY idx_wallet_context (entry_context)");
+        }
+    } catch (Throwable $e) {
+    }
+
+    try {
+        $stmt = $pdo->query("SHOW COLUMNS FROM wallet_transactions LIKE 'linked_txn_id'");
+        if (!(bool) $stmt->fetchColumn()) {
+            $pdo->exec("ALTER TABLE wallet_transactions ADD COLUMN linked_txn_id BIGINT UNSIGNED NULL AFTER entry_context");
+            $pdo->exec("ALTER TABLE wallet_transactions ADD KEY idx_wallet_linked_txn (linked_txn_id)");
+        }
+    } catch (Throwable $e) {
+    }
+
+    try {
+        $stmt = $pdo->query("SHOW COLUMNS FROM wallet_transactions LIKE 'transfer_group_id'");
+        if (!(bool) $stmt->fetchColumn()) {
+            $pdo->exec("ALTER TABLE wallet_transactions ADD COLUMN transfer_group_id VARCHAR(120) NULL AFTER linked_txn_id");
+            $pdo->exec("ALTER TABLE wallet_transactions ADD KEY idx_wallet_transfer_group (transfer_group_id)");
         }
     } catch (Throwable $e) {
     }
@@ -192,9 +225,9 @@ function wallet_bulk_insert(PDO $pdo, int $accountId, array $rows): void
 
     $stmt = $pdo->prepare("
         INSERT INTO wallet_transactions
-            (account_id, date, customer_name, number, transaction_id, type, amount, charges, commission_method, account_amount, payment_status, completed_at, remarks, created_at)
+            (account_id, date, customer_name, number, transaction_id, type, amount, charges, commission_method, account_amount, payment_status, completed_at, entry_context, linked_txn_id, transfer_group_id, remarks, created_at)
         VALUES
-            (:account_id, :date, :customer_name, :number, :transaction_id, :type, :amount, :charges, :commission_method, :account_amount, :payment_status, :completed_at, :remarks, :created_at)
+            (:account_id, :date, :customer_name, :number, :transaction_id, :type, :amount, :charges, :commission_method, :account_amount, :payment_status, :completed_at, :entry_context, :linked_txn_id, :transfer_group_id, :remarks, :created_at)
     ");
 
     foreach ($rows as $r) {
@@ -211,6 +244,9 @@ function wallet_bulk_insert(PDO $pdo, int $accountId, array $rows): void
             ':account_amount' => (float) ($r['account_amount'] ?? $r['amount'] ?? 0),
             ':payment_status' => (string) ($r['payment_status'] ?? 'completed'),
             ':completed_at' => (string) ($r['completed_at'] ?? $r['created_at'] ?? date('Y-m-d H:i:s')),
+            ':entry_context' => (string) ($r['entry_context'] ?? 'external'),
+            ':linked_txn_id' => isset($r['linked_txn_id']) ? (int) $r['linked_txn_id'] : null,
+            ':transfer_group_id' => ($r['transfer_group_id'] ?? null) !== '' ? ($r['transfer_group_id'] ?? null) : null,
             ':remarks' => ($r['remarks'] ?? null) !== '' ? ($r['remarks'] ?? null) : null,
             ':created_at' => (string) ($r['created_at'] ?? date('Y-m-d H:i:s')),
         ]);
@@ -351,7 +387,7 @@ function wallet_search_transactions(PDO $pdo, int $accountId, string $query, int
 
     $stmt = $pdo->prepare("
         SELECT id, date, customer_name, number, transaction_id, type, amount, charges, remarks,
-               commission_method, account_amount, payment_status, completed_at
+               commission_method, account_amount, payment_status, completed_at, entry_context, linked_txn_id, transfer_group_id
         FROM wallet_transactions
         WHERE account_id = :account_id
           AND (
