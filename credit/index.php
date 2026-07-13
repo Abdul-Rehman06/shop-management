@@ -25,8 +25,9 @@ if ($tab !== 'all') {
 }
 if ($q !== '') {
     $like = '%' . str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $q) . '%';
-    $whereParts[] = '(c.name LIKE :q ESCAPE \'\\\\\' OR c.phone LIKE :q ESCAPE \'\\\\\')';
-    $params[':q'] = $like;
+    $whereParts[] = '(c.name LIKE :q_name ESCAPE \'\\\\\' OR c.phone LIKE :q_phone ESCAPE \'\\\\\')';
+    $params[':q_name'] = $like;
+    $params[':q_phone'] = $like;
 }
 $where = $whereParts ? ('WHERE ' . implode(' AND ', $whereParts)) : '';
 

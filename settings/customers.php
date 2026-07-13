@@ -45,8 +45,10 @@ $q = trim((string) ($_GET['q'] ?? ''));
 $where = '';
 $params = [];
 if ($q !== '') {
-    $where = "WHERE name LIKE :q OR phone LIKE :q";
-    $params[':q'] = '%' . $q . '%';
+    $like = '%' . str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $q) . '%';
+    $where = "WHERE name LIKE :q_name ESCAPE '\\\\' OR phone LIKE :q_phone ESCAPE '\\\\'";
+    $params[':q_name'] = $like;
+    $params[':q_phone'] = $like;
 }
 
 $stmt = $pdo->prepare("

@@ -327,8 +327,10 @@ function bill_build_where(array $filters, array &$params, bool $usePaidDate = fa
 
     $q = trim((string) ($filters['q'] ?? ''));
     if ($q !== '') {
-        $params[':q'] = '%' . str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $q) . '%';
-        $where[] = "(bp.customer_name LIKE :q ESCAPE '\\\\' OR bp.bill_id LIKE :q ESCAPE '\\\\')";
+        $like = '%' . str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $q) . '%';
+        $params[':q_customer'] = $like;
+        $params[':q_bill_id'] = $like;
+        $where[] = "(bp.customer_name LIKE :q_customer ESCAPE '\\\\' OR bp.bill_id LIKE :q_bill_id ESCAPE '\\\\')";
     }
 
     return $where ? ('WHERE ' . implode(' AND ', $where)) : '';

@@ -355,16 +355,18 @@ function wallet_search_transactions(PDO $pdo, int $accountId, string $query, int
         FROM wallet_transactions
         WHERE account_id = :account_id
           AND (
-                customer_name LIKE :q ESCAPE '\\\\'
-             OR number LIKE :q ESCAPE '\\\\'
-             OR transaction_id LIKE :q ESCAPE '\\\\'
+                customer_name LIKE :q_name ESCAPE '\\\\'
+             OR number LIKE :q_number ESCAPE '\\\\'
+             OR transaction_id LIKE :q_tx ESCAPE '\\\\'
           )
         ORDER BY date DESC, id DESC
         LIMIT {$limit}
     ");
     $stmt->execute([
         ':account_id' => $accountId,
-        ':q' => $like,
+        ':q_name' => $like,
+        ':q_number' => $like,
+        ':q_tx' => $like,
     ]);
     return $stmt->fetchAll();
 }
@@ -398,14 +400,16 @@ function wallet_search_totals(PDO $pdo, int $accountId, string $query): array
         FROM wallet_transactions
         WHERE account_id = :account_id
           AND (
-                customer_name LIKE :q ESCAPE '\\\\'
-             OR number LIKE :q ESCAPE '\\\\'
-             OR transaction_id LIKE :q ESCAPE '\\\\'
+                customer_name LIKE :q_name ESCAPE '\\\\'
+             OR number LIKE :q_number ESCAPE '\\\\'
+             OR transaction_id LIKE :q_tx ESCAPE '\\\\'
           )
     ");
     $stmt->execute([
         ':account_id' => $accountId,
-        ':q' => $like,
+        ':q_name' => $like,
+        ':q_number' => $like,
+        ':q_tx' => $like,
     ]);
     $row = $stmt->fetch() ?: [];
 
