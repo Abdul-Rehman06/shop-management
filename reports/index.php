@@ -31,6 +31,7 @@ $dealerTxnTypes = [
     'credit_load_received' => 'Credit Load Received',
     'dealer_payment' => 'Dealer Payment',
 ];
+$billCompanies = bill_fetch_companies($pdo);
 
 $canViewProfit = app_can_view_profit();
 if (!$canViewProfit && in_array($filters['module'], ['sales', 'load', 'load_txn'], true)) {
@@ -123,6 +124,14 @@ if ($filters['module'] === 'all') {
     if ($dealerPaid !== null) {
         $topCards[] = ['label' => 'Dealer Payments', 'value' => number_format($dealerPaid, 2)];
     }
+    $billPending = $get($allReports, 'bill_payments', 'Pending Bills Amount', $toNumber);
+    if ($billPending !== null) {
+        $topCards[] = ['label' => 'Pending Bills', 'value' => number_format($billPending, 2)];
+    }
+    $billCommission = $get($allReports, 'bill_payments', 'Bill Commission', $toNumber);
+    if ($billCommission !== null) {
+        $topCards[] = ['label' => 'Bill Commission', 'value' => number_format($billCommission, 2)];
+    }
 
     $udharPlus = $get($allReports, 'udhar', 'Udhar (+)', $toNumber);
     if ($udharPlus !== null) {
@@ -168,6 +177,15 @@ if (($filters['txn_type'] ?? '') !== '') {
 }
 if ((int) ($filters['created_by'] ?? 0) > 0) {
     $query['created_by'] = (int) $filters['created_by'];
+}
+if (($filters['company'] ?? '') !== '') {
+    $query['company'] = (string) ($filters['company'] ?? '');
+}
+if (($filters['status'] ?? '') !== '') {
+    $query['status'] = (string) ($filters['status'] ?? '');
+}
+if (($filters['q'] ?? '') !== '') {
+    $query['q'] = (string) ($filters['q'] ?? '');
 }
 
 $baseQueryString = http_build_query($query);
@@ -305,6 +323,28 @@ require_once __DIR__ . '/../includes/sidebar.php';
                             <option value="<?= h($c) ?>" <?= $filters['type'] === $c ? 'selected' : '' ?>><?= h($c) ?></option>
                         <?php endforeach; ?>
                     </select>
+                </div>
+            <?php elseif ($filters['module'] === 'bill_payments'): ?>
+                <div>
+                    <label class="form-label text-xs uppercase tracking-wider text-gray-500 mb-1" for="company">Company</label>
+                    <select class="form-select bg-gray-50 border-0 shadow-sm rounded-xl" id="company" name="company">
+                        <option value="">All</option>
+                        <?php foreach ($billCompanies as $companyName): ?>
+                            <option value="<?= h($companyName) ?>" <?= (string) ($filters['company'] ?? '') === $companyName ? 'selected' : '' ?>><?= h($companyName) ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+                <div>
+                    <label class="form-label text-xs uppercase tracking-wider text-gray-500 mb-1" for="status">Status</label>
+                    <select class="form-select bg-gray-50 border-0 shadow-sm rounded-xl" id="status" name="status">
+                        <option value="">All</option>
+                        <option value="pending" <?= (string) ($filters['status'] ?? '') === 'pending' ? 'selected' : '' ?>>Pending</option>
+                        <option value="paid" <?= (string) ($filters['status'] ?? '') === 'paid' ? 'selected' : '' ?>>Paid</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="form-label text-xs uppercase tracking-wider text-gray-500 mb-1" for="q">Search</label>
+                    <input class="form-control bg-gray-50 border-0 shadow-sm rounded-xl" id="q" name="q" value="<?= h((string) ($filters['q'] ?? '')) ?>" placeholder="Customer or Bill ID">
                 </div>
             <?php endif; ?>
         </form>

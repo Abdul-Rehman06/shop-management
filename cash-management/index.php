@@ -196,6 +196,10 @@ $commissionEarned = wallet_commission_total($pdo, $date);
 $cashReceivedTotal = $walletCashReceived + $salesTotal + $loadSales + $udharRecovery + $creditAdvance + $nonCashSending;
 $cashSentTotal = $walletCashSent + $expensesTotal + $dealerPayments + $nonCashReceiving;
 $expectedCash = $openingCash + $cashReceivedTotal - $cashSentTotal;
+$billPendingOverview = bill_current_overview($pdo);
+$billTodaySummary = bill_summary($pdo, ['from' => $date, 'to' => $date]);
+$billPaidToday = bill_paid_amount_by_date($pdo, $date, $date);
+$actualShopCash = $expectedCash - (float) ($billPendingOverview['pending_amount'] ?? 0);
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = trim((string) ($_POST['action'] ?? ''));
@@ -391,6 +395,36 @@ require_once __DIR__ . '/../includes/sidebar.php';
             <div class="h3 mb-0 font-bold"><?= h(number_format($expectedCash, 2)) ?></div>
         </div>
     </div>
+    <div class="col-12 col-md-3">
+        <div class="p-3 bg-light rounded-4 border-start border-warning border-4 h-100 transition-all hover-lift">
+            <div class="text-muted small fw-medium mb-1 text-uppercase tracking-wider">Pending Bills Amount</div>
+            <div class="h4 mb-0 font-bold text-warning"><?= h(number_format((float) ($billPendingOverview['pending_amount'] ?? 0), 2)) ?></div>
+        </div>
+    </div>
+    <div class="col-12 col-md-3">
+        <div class="p-3 bg-light rounded-4 border-start border-info border-4 h-100 transition-all hover-lift">
+            <div class="text-muted small fw-medium mb-1 text-uppercase tracking-wider">Actual Shop Cash</div>
+            <div class="h4 mb-0 font-bold text-info"><?= h(number_format($actualShopCash, 2)) ?></div>
+        </div>
+    </div>
+    <div class="col-12 col-md-3">
+        <div class="p-3 bg-light rounded-4 border-start border-success border-4 h-100 transition-all hover-lift">
+            <div class="text-muted small fw-medium mb-1 text-uppercase tracking-wider">Today's Bill Commission</div>
+            <div class="h4 mb-0 font-bold text-success"><?= h(number_format((float) ($billTodaySummary['service_charge'] ?? 0), 2)) ?></div>
+        </div>
+    </div>
+    <div class="col-12 col-md-3">
+        <div class="p-3 bg-light rounded-4 border-start border-primary border-4 h-100 transition-all hover-lift">
+            <div class="text-muted small fw-medium mb-1 text-uppercase tracking-wider">Pending Bills Count</div>
+            <div class="h4 mb-0 font-bold text-primary"><?= h((string) (int) ($billPendingOverview['pending_count'] ?? 0)) ?></div>
+        </div>
+    </div>
+    <div class="col-12 col-md-3">
+        <div class="p-3 bg-light rounded-4 border-start border-secondary border-4 h-100 transition-all hover-lift">
+            <div class="text-muted small fw-medium mb-1 text-uppercase tracking-wider">Paid Bills Amount</div>
+            <div class="h4 mb-0 font-bold text-secondary"><?= h(number_format($billPaidToday, 2)) ?></div>
+        </div>
+    </div>
 </div>
 
 <div class="row g-4 mb-4 animate-slide-up stagger-2">
@@ -450,6 +484,14 @@ require_once __DIR__ . '/../includes/sidebar.php';
                         <tr class="transition-all hover-bg-light">
                             <td class="px-3 py-3 border-0 border-bottom text-gray-700">Commission Income</td>
                             <td class="px-3 py-3 border-0 border-bottom text-end font-medium text-success">+ <?= h(number_format($commissionEarned, 2)) ?></td>
+                        </tr>
+                        <tr class="transition-all hover-bg-light">
+                            <td class="px-3 py-3 border-0 border-bottom text-gray-700">Pending Bills (Liability)</td>
+                            <td class="px-3 py-3 border-0 border-bottom text-end font-medium text-warning">- <?= h(number_format((float) ($billPendingOverview['pending_amount'] ?? 0), 2)) ?></td>
+                        </tr>
+                        <tr class="transition-all hover-bg-light">
+                            <td class="px-3 py-3 border-0 border-bottom text-gray-700">Actual Shop Cash</td>
+                            <td class="px-3 py-3 border-0 border-bottom text-end font-medium text-info"><?= h(number_format($actualShopCash, 2)) ?></td>
                         </tr>
                         </tbody>
                     </table>

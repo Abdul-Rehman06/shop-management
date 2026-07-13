@@ -463,6 +463,10 @@ $cashSentToday = 0.0;
 $cashExpectedToday = 0.0;
 $cashCountToday = null;
 $cashCommissionToday = 0.0;
+$billPendingCurrent = ['pending_amount' => 0.0, 'pending_count' => 0];
+$billTodaySummary = ['service_charge' => 0.0];
+$billPaidToday = 0.0;
+$actualShopCashToday = 0.0;
 try {
     $cashOpeningToday = (float) $pdo->query("
         SELECT COALESCE(SUM(wt.amount), 0)
@@ -533,6 +537,10 @@ try {
     $cashReceivedToday = $walletCashReceiving + $salesCash + $loadSalesCash + $udharRecoveryCash + $creditAdvanceCash;
     $cashSentToday = $walletCashSending + $todayExpense + $dealerPaymentsTodayTotal;
     $cashExpectedToday = $cashOpeningToday + $cashReceivedToday - $cashSentToday;
+    $billPendingCurrent = bill_current_overview($pdo);
+    $billTodaySummary = bill_summary($pdo, ['from' => $today, 'to' => $today]);
+    $billPaidToday = bill_paid_amount_by_date($pdo, $today, $today);
+    $actualShopCashToday = $cashExpectedToday - (float) ($billPendingCurrent['pending_amount'] ?? 0);
 
     $stmt = $pdo->query("SELECT * FROM cash_counts WHERE count_date = CURDATE() LIMIT 1");
     $cashCountToday = $stmt->fetch() ?: null;
@@ -1203,6 +1211,50 @@ $extraHead = '<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/char
                 </div>
                 <div class="text-3xl font-extrabold text-gray-900 tracking-tight">Rs <?= money($cashCommissionToday) ?></div>
                 <div class="text-sm font-medium text-gray-500 mt-2 bg-gray-50 px-3 py-1.5 rounded-lg inline-block border border-gray-100">Today</div>
+            </div>
+        </div>
+        <div class="glass-card rounded-3xl p-6 relative overflow-hidden group">
+            <div class="absolute -right-6 -top-6 w-32 h-32 bg-warning-subtle rounded-full group-hover:scale-150 transition-transform duration-700 ease-out z-0 opacity-50"></div>
+            <div class="relative z-10">
+                <div class="flex items-center justify-between mb-6">
+                    <div class="text-xs font-bold text-gray-500 uppercase tracking-widest">Pending Bills</div>
+                    <div class="p-2.5 bg-warning-subtle text-warning-emphasis rounded-xl"><i data-lucide="file-clock" class="w-5 h-5"></i></div>
+                </div>
+                <div class="text-3xl font-extrabold text-gray-900 tracking-tight">Rs <?= money((float) ($billPendingCurrent['pending_amount'] ?? 0)) ?></div>
+                <div class="text-sm font-medium text-gray-500 mt-2 bg-gray-50 px-3 py-1.5 rounded-lg inline-block border border-gray-100"><?= h((string) (int) ($billPendingCurrent['pending_count'] ?? 0)) ?> bills pending</div>
+            </div>
+        </div>
+        <div class="glass-card rounded-3xl p-6 relative overflow-hidden group">
+            <div class="absolute -right-6 -top-6 w-32 h-32 bg-cyan-50 rounded-full group-hover:scale-150 transition-transform duration-700 ease-out z-0 opacity-50"></div>
+            <div class="relative z-10">
+                <div class="flex items-center justify-between mb-6">
+                    <div class="text-xs font-bold text-gray-500 uppercase tracking-widest">Actual Shop Cash</div>
+                    <div class="p-2.5 bg-cyan-100 text-cyan-700 rounded-xl"><i data-lucide="safe" class="w-5 h-5"></i></div>
+                </div>
+                <div class="text-3xl font-extrabold text-gray-900 tracking-tight">Rs <?= money($actualShopCashToday) ?></div>
+                <div class="text-sm font-medium text-gray-500 mt-2 bg-gray-50 px-3 py-1.5 rounded-lg inline-block border border-gray-100">Cash drawer - pending bills</div>
+            </div>
+        </div>
+        <div class="glass-card rounded-3xl p-6 relative overflow-hidden group">
+            <div class="absolute -right-6 -top-6 w-32 h-32 bg-emerald-50 rounded-full group-hover:scale-150 transition-transform duration-700 ease-out z-0 opacity-50"></div>
+            <div class="relative z-10">
+                <div class="flex items-center justify-between mb-6">
+                    <div class="text-xs font-bold text-gray-500 uppercase tracking-widest">Bill Commission</div>
+                    <div class="p-2.5 bg-emerald-100 text-emerald-600 rounded-xl"><i data-lucide="badge-dollar-sign" class="w-5 h-5"></i></div>
+                </div>
+                <div class="text-3xl font-extrabold text-gray-900 tracking-tight">Rs <?= money((float) ($billTodaySummary['service_charge'] ?? 0)) ?></div>
+                <div class="text-sm font-medium text-gray-500 mt-2 bg-gray-50 px-3 py-1.5 rounded-lg inline-block border border-gray-100">Today</div>
+            </div>
+        </div>
+        <div class="glass-card rounded-3xl p-6 relative overflow-hidden group">
+            <div class="absolute -right-6 -top-6 w-32 h-32 bg-primary-subtle rounded-full group-hover:scale-150 transition-transform duration-700 ease-out z-0 opacity-50"></div>
+            <div class="relative z-10">
+                <div class="flex items-center justify-between mb-6">
+                    <div class="text-xs font-bold text-gray-500 uppercase tracking-widest">Paid Bills Amount</div>
+                    <div class="p-2.5 bg-primary-subtle text-primary-emphasis rounded-xl"><i data-lucide="file-check" class="w-5 h-5"></i></div>
+                </div>
+                <div class="text-3xl font-extrabold text-gray-900 tracking-tight">Rs <?= money($billPaidToday) ?></div>
+                <div class="text-sm font-medium text-gray-500 mt-2 bg-gray-50 px-3 py-1.5 rounded-lg inline-block border border-gray-100">Paid today</div>
             </div>
         </div>
     </div>

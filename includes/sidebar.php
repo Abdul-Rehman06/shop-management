@@ -41,6 +41,9 @@ function isActive(string $path, string $currentPath): string {
             <a class="flex items-center gap-3.5 px-4 py-3 rounded-xl text-[15px] font-semibold transition-all duration-300 <?= isActive('dealer-payments', $currentPath) ?>" href="<?= h(app_url('dealer-payments/index.php')) ?>">
                 <i data-lucide="users" class="w-5 h-5 <?= strpos($currentPath, 'dealer-payments') !== false ? 'text-white' : 'text-gray-400 group-hover:text-brand-500' ?>"></i> Dealer Payments
             </a>
+            <a class="flex items-center gap-3.5 px-4 py-3 rounded-xl text-[15px] font-semibold transition-all duration-300 <?= isActive('bill-payments', $currentPath) ?>" href="<?= h(app_url('bill-payments/index.php')) ?>">
+                <i data-lucide="file-badge-2" class="w-5 h-5 <?= strpos($currentPath, 'bill-payments') !== false ? 'text-white' : 'text-gray-400 group-hover:text-brand-500' ?>"></i> Bill Payments
+            </a>
             <a class="flex items-center gap-3.5 px-4 py-3 rounded-xl text-[15px] font-semibold transition-all duration-300 <?= isActive('cash-management', $currentPath) ?>" href="<?= h(app_url('cash-management/index.php')) ?>">
                 <i data-lucide="banknote" class="w-5 h-5 <?= strpos($currentPath, 'cash-management') !== false ? 'text-white' : 'text-gray-400 group-hover:text-brand-500' ?>"></i> Cash Management
             </a>

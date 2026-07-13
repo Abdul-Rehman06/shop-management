@@ -16,6 +16,7 @@ function report_modules(): array
         'sales' => 'Sales',
         'dealer_ledger' => 'Dealer Statement',
         'dealer_payments' => 'Dealer Payments',
+        'bill_payments' => 'Bill Payments',
         'udhar' => 'Udhar Ledger',
         'credit' => 'Credit (Advance)',
     ];
@@ -70,6 +71,9 @@ function report_filters_from_request(): array
     $dealer = trim((string) ($_GET['dealer'] ?? ''));
     $txnType = trim((string) ($_GET['txn_type'] ?? ''));
     $createdBy = (int) ($_GET['created_by'] ?? 0);
+    $company = trim((string) ($_GET['company'] ?? ''));
+    $status = trim((string) ($_GET['status'] ?? ''));
+    $q = trim((string) ($_GET['q'] ?? ''));
 
     return [
         'module' => $module,
@@ -80,6 +84,9 @@ function report_filters_from_request(): array
         'dealer' => $dealer,
         'txn_type' => $txnType,
         'created_by' => $createdBy,
+        'company' => $company,
+        'status' => $status,
+        'q' => $q,
         'range' => $range,
     ];
 }
@@ -187,6 +194,46 @@ function report_fetch(PDO $pdo, array $filters): array
                 'Pending Payments' => (string) $pendingCount,
                 'Pending Amount' => number_format($pendingAmount, 2),
                 'Net' => number_format($receiving - $accountDeduction, 2),
+            ],
+        ];
+    }
+
+    if ($module === 'bill_payments') {
+        $filtersForBills = [
+            'from' => $from,
+            'to' => $to,
+            'company' => trim((string) ($filters['company'] ?? '')),
+            'status' => trim((string) ($filters['status'] ?? '')),
+            'q' => trim((string) ($filters['q'] ?? '')),
+        ];
+        $rows = bill_list($pdo, $filtersForBills, 500);
+        $summary = bill_summary($pdo, $filtersForBills);
+
+        return [
+            'headers' => ['Bill ID', 'Customer Name', 'Company', 'Bill Amount', 'Service Charge', 'Total Received', 'Payment Date', 'Due Date', 'Status', 'Paid At', 'Notes'],
+            'rows' => array_map(static function (array $r): array {
+                return [
+                    (string) ($r['bill_id'] ?? ''),
+                    (string) ($r['customer_name'] ?? ''),
+                    (string) ($r['company_name'] ?? ''),
+                    number_format((float) ($r['bill_amount'] ?? 0), 2, '.', ''),
+                    number_format((float) ($r['service_charge'] ?? 0), 2, '.', ''),
+                    number_format((float) ($r['total_received'] ?? 0), 2, '.', ''),
+                    (string) ($r['payment_date'] ?? ''),
+                    (string) ($r['due_date'] ?? ''),
+                    (string) ($r['status'] ?? ''),
+                    (string) ($r['paid_at'] ?? ''),
+                    (string) ($r['notes'] ?? ''),
+                ];
+            }, $rows),
+            'summary' => [
+                'Bills Count' => (string) (int) ($summary['count'] ?? 0),
+                'Bill Amount' => number_format((float) ($summary['bill_amount'] ?? 0), 2),
+                'Bill Commission' => number_format((float) ($summary['service_charge'] ?? 0), 2),
+                'Total Received' => number_format((float) ($summary['total_received'] ?? 0), 2),
+                'Pending Bills Amount' => number_format((float) ($summary['pending_amount'] ?? 0), 2),
+                'Pending Bills Count' => (string) (int) ($summary['pending_count'] ?? 0),
+                'Paid Bills Amount' => number_format((float) ($summary['paid_amount'] ?? 0), 2),
             ],
         ];
     }
