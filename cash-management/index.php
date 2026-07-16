@@ -92,7 +92,10 @@ function udhar_recovery_total(PDO $pdo, string $date): float
         $stmt = $pdo->prepare("
             SELECT COALESCE(SUM(amount), 0)
             FROM udhar_transactions
-            WHERE txn_date = :d AND txn_type = 'payment'
+            WHERE txn_date = :d
+              AND txn_type = 'payment'
+              AND COALESCE(linked_wallet_txn_id, 0) = 0
+              AND COALESCE(payment_method, 'cash') = 'cash'
         ");
         $stmt->execute([':d' => $date]);
         return (float) $stmt->fetchColumn();
@@ -155,7 +158,7 @@ function non_cash_wallet_sum(PDO $pdo, string $date, string $type): float
         WHERE a.account_type IN ('easypaisa', 'jazzcash', 'bank')
           AND wt.date = :date
           AND wt.type = :type
-          AND COALESCE(wt.entry_context, 'external') NOT IN ('internal_transfer', 'dealer_payment_online')
+          AND COALESCE(wt.entry_context, 'external') NOT IN ('internal_transfer', 'dealer_payment_online', 'bill_collection_online', 'bill_payment_online', 'udhar_recovery_online')
           AND (wt.remarks IS NULL OR wt.remarks NOT LIKE 'Dealer payment #%')
           AND (wt.remarks IS NULL OR wt.remarks NOT LIKE 'Bank Deposit #%' )
     ");

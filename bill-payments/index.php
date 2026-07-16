@@ -41,6 +41,10 @@ $paymentDate = trim((string) ($_POST['payment_date'] ?? $today));
 $dueDate = trim((string) ($_POST['due_date'] ?? ''));
 $billStatus = trim((string) ($_POST['status'] ?? 'pending'));
 $notes = trim((string) ($_POST['notes'] ?? ''));
+$receivedInType = trim((string) ($_POST['received_in_type'] ?? 'cash'));
+$receivedInAccountId = (int) ($_POST['received_in_account_id'] ?? 0);
+$paidFromType = trim((string) ($_POST['paid_from_type'] ?? 'cash'));
+$paidFromAccountId = (int) ($_POST['paid_from_account_id'] ?? 0);
 $manageCompanyId = (int) ($_GET['edit_company'] ?? ($_POST['company_id'] ?? 0));
 $companyCategory = trim((string) ($_POST['company_category'] ?? ''));
 $companyShortCode = trim((string) ($_POST['company_short_code'] ?? ''));
@@ -54,6 +58,9 @@ try {
 } catch (Throwable $e) {
     $savedCustomers = [];
 }
+
+$billMethodLabels = bill_method_labels();
+$billMethodAccounts = bill_accounts_by_method($pdo);
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = trim((string) ($_POST['action'] ?? ''));
@@ -157,6 +164,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $dueDate = trim((string) ($_POST['due_date'] ?? ''));
         $billStatus = trim((string) ($_POST['status'] ?? 'pending'));
         $notes = trim((string) ($_POST['notes'] ?? ''));
+        $receivedInType = trim((string) ($_POST['received_in_type'] ?? 'cash'));
+        $receivedInAccountId = (int) ($_POST['received_in_account_id'] ?? 0);
+        $paidFromType = trim((string) ($_POST['paid_from_type'] ?? 'cash'));
+        $paidFromAccountId = (int) ($_POST['paid_from_account_id'] ?? 0);
 
         if ($billId === '') {
             $billId = bill_generate_id();
@@ -175,6 +186,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $error = 'Due date is invalid.';
         } elseif (!in_array($billStatus, ['pending', 'paid'], true)) {
             $error = 'Invalid status.';
+        } elseif (!array_key_exists($receivedInType, $billMethodLabels)) {
+            $error = 'Invalid collection method.';
+        } elseif ($receivedInType !== 'cash' && $receivedInType !== 'other' && $receivedInAccountId <= 0) {
+            $error = 'Please select where the customer payment was received.';
+        } elseif ($billStatus === 'paid' && !array_key_exists($paidFromType, $billMethodLabels)) {
+            $error = 'Invalid paid from method.';
+        } elseif ($billStatus === 'paid' && $paidFromType !== 'cash' && $paidFromType !== 'other' && $paidFromAccountId <= 0) {
+            $error = 'Please select the account used to pay the bill.';
         } else {
             $stmt = $pdo->prepare("SELECT COUNT(*) FROM bill_payments WHERE bill_id = :bill_id");
             $stmt->execute([':bill_id' => $billId]);
@@ -187,13 +206,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $billAmount = (float) $billAmountRaw;
             $serviceCharge = (float) $serviceChargeRaw;
             $totalReceived = $billAmount + $serviceCharge;
-            $cashAccountId = bill_cash_account_id($pdo);
 
             $pdo->beginTransaction();
             try {
-                $collectedTxnId = bill_insert_cash_collection_txn(
+                $collectedTxnId = bill_insert_collection_txn(
                     $pdo,
-                    $cashAccountId,
+                    $receivedInType,
+                    $receivedInAccountId > 0 ? $receivedInAccountId : null,
                     $billId,
                     $customerName,
                     $companyName,
@@ -206,9 +225,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $paidTxnId = null;
                 $paidAt = null;
                 if ($billStatus === 'paid') {
-                    $paidTxnId = bill_insert_cash_payment_txn(
+                    $paidTxnId = bill_insert_payment_txn(
                         $pdo,
-                        $cashAccountId,
+                        $paidFromType,
+                        $paidFromAccountId > 0 ? $paidFromAccountId : null,
                         $billId,
                         $customerName,
                         $companyName,
@@ -221,9 +241,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                 $stmt = $pdo->prepare("
                     INSERT INTO bill_payments
-                        (bill_id, customer_name, company_name, bill_amount, service_charge, total_received, payment_date, due_date, status, notes, collected_wallet_txn_id, paid_wallet_txn_id, paid_at, created_by)
+                        (bill_id, customer_name, company_name, bill_amount, service_charge, total_received, payment_date, due_date, received_in_type, received_in_account_id, status, paid_from_type, paid_from_account_id, notes, collected_wallet_txn_id, paid_wallet_txn_id, paid_at, created_by)
                     VALUES
-                        (:bill_id, :customer_name, :company_name, :bill_amount, :service_charge, :total_received, :payment_date, :due_date, :status, :notes, :collected_wallet_txn_id, :paid_wallet_txn_id, :paid_at, :created_by)
+                        (:bill_id, :customer_name, :company_name, :bill_amount, :service_charge, :total_received, :payment_date, :due_date, :received_in_type, :received_in_account_id, :status, :paid_from_type, :paid_from_account_id, :notes, :collected_wallet_txn_id, :paid_wallet_txn_id, :paid_at, :created_by)
                 ");
                 $stmt->execute([
                     ':bill_id' => $billId,
@@ -234,7 +254,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     ':total_received' => $totalReceived,
                     ':payment_date' => $paymentDate,
                     ':due_date' => $dueDate !== '' ? $dueDate : null,
+                    ':received_in_type' => $receivedInType,
+                    ':received_in_account_id' => $receivedInType === 'cash' ? bill_cash_account_id($pdo) : ($receivedInAccountId > 0 ? $receivedInAccountId : null),
                     ':status' => $billStatus,
+                    ':paid_from_type' => $billStatus === 'paid' ? $paidFromType : null,
+                    ':paid_from_account_id' => $billStatus === 'paid'
+                        ? ($paidFromType === 'cash' ? bill_cash_account_id($pdo) : ($paidFromAccountId > 0 ? $paidFromAccountId : null))
+                        : null,
                     ':notes' => $notes !== '' ? $notes : null,
                     ':collected_wallet_txn_id' => $collectedTxnId,
                     ':paid_wallet_txn_id' => $paidTxnId,
@@ -271,12 +297,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             app_redirect('bill-payments/index.php?' . $returnQuery);
         }
 
-        $cashAccountId = bill_cash_account_id($pdo);
+        $paidFromType = trim((string) ($_POST['paid_from_type'] ?? 'cash'));
+        $paidFromAccountId = (int) ($_POST['paid_from_account_id'] ?? 0);
+        if (!array_key_exists($paidFromType, $billMethodLabels)) {
+            flash_set('error', 'Invalid paid from method.');
+            app_redirect('bill-payments/index.php?' . $returnQuery);
+        }
+        if ($paidFromType !== 'cash' && $paidFromType !== 'other' && $paidFromAccountId <= 0) {
+            flash_set('error', 'Please select the account used to pay the bill.');
+            app_redirect('bill-payments/index.php?' . $returnQuery);
+        }
+
         $pdo->beginTransaction();
         try {
-            $paidTxnId = bill_insert_cash_payment_txn(
+            $paidTxnId = bill_insert_payment_txn(
                 $pdo,
-                $cashAccountId,
+                $paidFromType,
+                $paidFromAccountId > 0 ? $paidFromAccountId : null,
                 (string) ($row['bill_id'] ?? ''),
                 (string) ($row['customer_name'] ?? ''),
                 (string) ($row['company_name'] ?? ''),
@@ -288,11 +325,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $stmt = $pdo->prepare("
                 UPDATE bill_payments
                 SET status = 'paid',
+                    paid_from_type = :paid_from_type,
+                    paid_from_account_id = :paid_from_account_id,
                     paid_wallet_txn_id = :paid_wallet_txn_id,
                     paid_at = NOW()
                 WHERE id = :id
             ");
             $stmt->execute([
+                ':paid_from_type' => $paidFromType,
+                ':paid_from_account_id' => $paidFromType === 'cash' ? bill_cash_account_id($pdo) : ($paidFromAccountId > 0 ? $paidFromAccountId : null),
                 ':paid_wallet_txn_id' => $paidTxnId,
                 ':id' => $id,
             ]);
@@ -467,6 +508,42 @@ require_once __DIR__ . '/../includes/sidebar.php';
                         </select>
                     </div>
                     <div class="col-12 col-md-4">
+                        <label class="form-label" for="received_in_type">Received In</label>
+                        <select class="form-select bill-method-toggle" id="received_in_type" name="received_in_type" data-target-prefix="received_in">
+                            <option value="cash" <?= $receivedInType === 'cash' ? 'selected' : '' ?>>Cash</option>
+                            <option value="jazzcash" <?= $receivedInType === 'jazzcash' ? 'selected' : '' ?>>JazzCash</option>
+                            <option value="easypaisa" <?= $receivedInType === 'easypaisa' ? 'selected' : '' ?>>EasyPaisa</option>
+                            <option value="bank" <?= $receivedInType === 'bank' ? 'selected' : '' ?>>Bank Account</option>
+                        </select>
+                    </div>
+                    <div class="col-12 col-md-4 bill-method-account" data-method-prefix="received_in" data-method-type="jazzcash"<?= $receivedInType === 'jazzcash' ? '' : ' style="display:none;"' ?>>
+                        <label class="form-label" for="received_in_jazzcash_account_id">JazzCash Account</label>
+                        <select class="form-select" id="received_in_jazzcash_account_id" name="received_in_account_id">
+                            <option value="">-- Select JazzCash --</option>
+                            <?php foreach (($billMethodAccounts['jazzcash'] ?? []) as $account): ?>
+                                <option value="<?= (int) ($account['id'] ?? 0) ?>" <?= $receivedInType === 'jazzcash' && $receivedInAccountId === (int) ($account['id'] ?? 0) ? 'selected' : '' ?>><?= h((string) ($account['account_name'] ?? '')) ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+                    <div class="col-12 col-md-4 bill-method-account" data-method-prefix="received_in" data-method-type="easypaisa"<?= $receivedInType === 'easypaisa' ? '' : ' style="display:none;"' ?>>
+                        <label class="form-label" for="received_in_easypaisa_account_id">EasyPaisa Account</label>
+                        <select class="form-select" id="received_in_easypaisa_account_id" name="received_in_account_id">
+                            <option value="">-- Select EasyPaisa --</option>
+                            <?php foreach (($billMethodAccounts['easypaisa'] ?? []) as $account): ?>
+                                <option value="<?= (int) ($account['id'] ?? 0) ?>" <?= $receivedInType === 'easypaisa' && $receivedInAccountId === (int) ($account['id'] ?? 0) ? 'selected' : '' ?>><?= h((string) ($account['account_name'] ?? '')) ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+                    <div class="col-12 col-md-4 bill-method-account" data-method-prefix="received_in" data-method-type="bank"<?= $receivedInType === 'bank' ? '' : ' style="display:none;"' ?>>
+                        <label class="form-label" for="received_in_bank_account_id">Bank Account</label>
+                        <select class="form-select" id="received_in_bank_account_id" name="received_in_account_id">
+                            <option value="">-- Select Bank Account --</option>
+                            <?php foreach (($billMethodAccounts['bank'] ?? []) as $account): ?>
+                                <option value="<?= (int) ($account['id'] ?? 0) ?>" <?= $receivedInType === 'bank' && $receivedInAccountId === (int) ($account['id'] ?? 0) ? 'selected' : '' ?>><?= h((string) ($account['account_name'] ?? '')) ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+                    <div class="col-12 col-md-4">
                         <label class="form-label" for="bill_status">Status</label>
                         <select class="form-select" id="bill_status" name="status">
                             <option value="pending" <?= $billStatus === 'pending' ? 'selected' : '' ?>>Pending</option>
@@ -489,13 +566,49 @@ require_once __DIR__ . '/../includes/sidebar.php';
                         <label class="form-label" for="due_date">Due Date</label>
                         <input class="form-control" type="date" id="due_date" name="due_date" value="<?= h($dueDate) ?>">
                     </div>
+                    <div class="col-12 col-md-4 bill-paid-fields"<?= $billStatus === 'paid' ? '' : ' style="display:none;"' ?>>
+                        <label class="form-label" for="paid_from_type">Paid From</label>
+                        <select class="form-select bill-method-toggle" id="paid_from_type" name="paid_from_type" data-target-prefix="paid_from">
+                            <option value="cash" <?= $paidFromType === 'cash' ? 'selected' : '' ?>>Cash</option>
+                            <option value="jazzcash" <?= $paidFromType === 'jazzcash' ? 'selected' : '' ?>>JazzCash</option>
+                            <option value="easypaisa" <?= $paidFromType === 'easypaisa' ? 'selected' : '' ?>>EasyPaisa</option>
+                            <option value="bank" <?= $paidFromType === 'bank' ? 'selected' : '' ?>>Bank Account</option>
+                        </select>
+                    </div>
+                    <div class="col-12 col-md-4 bill-method-account bill-paid-fields" data-method-prefix="paid_from" data-method-type="jazzcash"<?= $billStatus === 'paid' && $paidFromType === 'jazzcash' ? '' : ' style="display:none;"' ?>>
+                        <label class="form-label" for="paid_from_jazzcash_account_id">Paid From JazzCash</label>
+                        <select class="form-select" id="paid_from_jazzcash_account_id" name="paid_from_account_id">
+                            <option value="">-- Select JazzCash --</option>
+                            <?php foreach (($billMethodAccounts['jazzcash'] ?? []) as $account): ?>
+                                <option value="<?= (int) ($account['id'] ?? 0) ?>" <?= $billStatus === 'paid' && $paidFromType === 'jazzcash' && $paidFromAccountId === (int) ($account['id'] ?? 0) ? 'selected' : '' ?>><?= h((string) ($account['account_name'] ?? '')) ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+                    <div class="col-12 col-md-4 bill-method-account bill-paid-fields" data-method-prefix="paid_from" data-method-type="easypaisa"<?= $billStatus === 'paid' && $paidFromType === 'easypaisa' ? '' : ' style="display:none;"' ?>>
+                        <label class="form-label" for="paid_from_easypaisa_account_id">Paid From EasyPaisa</label>
+                        <select class="form-select" id="paid_from_easypaisa_account_id" name="paid_from_account_id">
+                            <option value="">-- Select EasyPaisa --</option>
+                            <?php foreach (($billMethodAccounts['easypaisa'] ?? []) as $account): ?>
+                                <option value="<?= (int) ($account['id'] ?? 0) ?>" <?= $billStatus === 'paid' && $paidFromType === 'easypaisa' && $paidFromAccountId === (int) ($account['id'] ?? 0) ? 'selected' : '' ?>><?= h((string) ($account['account_name'] ?? '')) ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+                    <div class="col-12 col-md-4 bill-method-account bill-paid-fields" data-method-prefix="paid_from" data-method-type="bank"<?= $billStatus === 'paid' && $paidFromType === 'bank' ? '' : ' style="display:none;"' ?>>
+                        <label class="form-label" for="paid_from_bank_account_id">Paid From Bank</label>
+                        <select class="form-select" id="paid_from_bank_account_id" name="paid_from_account_id">
+                            <option value="">-- Select Bank Account --</option>
+                            <?php foreach (($billMethodAccounts['bank'] ?? []) as $account): ?>
+                                <option value="<?= (int) ($account['id'] ?? 0) ?>" <?= $billStatus === 'paid' && $paidFromType === 'bank' && $paidFromAccountId === (int) ($account['id'] ?? 0) ? 'selected' : '' ?>><?= h((string) ($account['account_name'] ?? '')) ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
                     <div class="col-12">
                         <label class="form-label" for="notes">Notes</label>
                         <input class="form-control" id="notes" name="notes" value="<?= h($notes) ?>" placeholder="Optional note">
                     </div>
                     <div class="col-12">
                         <div class="small text-muted">
-                            Total Received = Bill Amount + Service Charge. Cash drawer increases by total received, service charge counts as income, and bill amount stays pending until company payment.
+                            Customer collection and company payment are separate. Received In updates only the selected source. Paid From deducts only from the selected source.
                         </div>
                     </div>
                     <div class="col-12">
@@ -676,12 +789,14 @@ require_once __DIR__ . '/../includes/sidebar.php';
                     <th>Bill ID</th>
                     <th>Customer</th>
                     <th>Company</th>
+                    <th>Received In</th>
                     <th class="text-end">Bill Amount</th>
                     <th class="text-end">Service Charge</th>
                     <th class="text-end">Total Received</th>
                     <th>Payment Date</th>
                     <th>Due Date</th>
                     <th>Status</th>
+                    <th>Paid From</th>
                     <th>Paid At</th>
                     <th>Notes</th>
                     <th class="text-end">Actions</th>
@@ -693,6 +808,13 @@ require_once __DIR__ . '/../includes/sidebar.php';
                         <td class="fw-semibold"><?= h((string) ($row['bill_id'] ?? '')) ?></td>
                         <td><?= h((string) ($row['customer_name'] ?? '')) ?></td>
                         <td><?= h((string) ($row['company_name'] ?? '')) ?></td>
+                        <td>
+                            <?php
+                            $receivedLabel = bill_method_label((string) ($row['received_in_type'] ?? 'cash'));
+                            $receivedAccountLabel = trim((string) ($row['received_in_account_name'] ?? ''));
+                            ?>
+                            <?= h($receivedLabel) ?><?= $receivedAccountLabel !== '' ? ' - ' . h($receivedAccountLabel) : '' ?>
+                        </td>
                         <td class="text-end"><?= h(number_format((float) ($row['bill_amount'] ?? 0), 2)) ?></td>
                         <td class="text-end text-success"><?= h(number_format((float) ($row['service_charge'] ?? 0), 2)) ?></td>
                         <td class="text-end fw-semibold"><?= h(number_format((float) ($row['total_received'] ?? 0), 2)) ?></td>
@@ -703,12 +825,19 @@ require_once __DIR__ . '/../includes/sidebar.php';
                                 <?= h(ucfirst((string) ($row['status'] ?? 'pending'))) ?>
                             </span>
                         </td>
+                        <td>
+                            <?php
+                            $paidLabel = trim((string) ($row['paid_from_type'] ?? '')) !== '' ? bill_method_label((string) ($row['paid_from_type'] ?? '')) : '-';
+                            $paidAccountLabel = trim((string) ($row['paid_from_account_name'] ?? ''));
+                            ?>
+                            <?= h($paidLabel) ?><?= $paidAccountLabel !== '' ? ' - ' . h($paidAccountLabel) : '' ?>
+                        </td>
                         <td><?= h((string) ($row['paid_at'] ?? '')) ?></td>
                         <td><?= h((string) ($row['notes'] ?? '')) ?></td>
                         <td class="text-end">
                             <div class="d-inline-flex gap-2">
                                 <?php if ((string) ($row['status'] ?? '') !== 'paid'): ?>
-                                    <form method="post" class="d-inline">
+                                    <form method="post" class="d-inline-flex gap-2 align-items-center">
                                         <input type="hidden" name="action" value="mark_paid">
                                         <input type="hidden" name="id" value="<?= h((string) (int) ($row['id'] ?? 0)) ?>">
                                         <input type="hidden" name="from" value="<?= h($from) ?>">
@@ -716,6 +845,20 @@ require_once __DIR__ . '/../includes/sidebar.php';
                                         <input type="hidden" name="company" value="<?= h($company) ?>">
                                         <input type="hidden" name="status" value="<?= h($status) ?>">
                                         <input type="hidden" name="q" value="<?= h($q) ?>">
+                                        <select class="form-select form-select-sm" name="paid_from_type">
+                                            <option value="cash">Cash</option>
+                                            <option value="jazzcash">JazzCash</option>
+                                            <option value="easypaisa">EasyPaisa</option>
+                                            <option value="bank">Bank Account</option>
+                                        </select>
+                                        <select class="form-select form-select-sm" name="paid_from_account_id">
+                                            <option value="">Auto / Select Account</option>
+                                            <?php foreach (['jazzcash', 'easypaisa', 'bank'] as $methodKey): ?>
+                                                <?php foreach (($billMethodAccounts[$methodKey] ?? []) as $account): ?>
+                                                    <option value="<?= (int) ($account['id'] ?? 0) ?>"><?= h((string) ($account['account_name'] ?? '')) ?> (<?= h(bill_method_label($methodKey)) ?>)</option>
+                                                <?php endforeach; ?>
+                                            <?php endforeach; ?>
+                                        </select>
                                         <button class="btn btn-outline-success btn-sm">Mark Paid</button>
                                     </form>
                                 <?php endif; ?>
@@ -737,7 +880,7 @@ require_once __DIR__ . '/../includes/sidebar.php';
                 <?php endforeach; ?>
                 <?php if (!$rows): ?>
                     <tr>
-                        <td colspan="12" class="text-center text-muted py-4">No bill payments found.</td>
+                        <td colspan="14" class="text-center text-muted py-4">No bill payments found.</td>
                     </tr>
                 <?php endif; ?>
                 </tbody>
@@ -750,6 +893,8 @@ require_once __DIR__ . '/../includes/sidebar.php';
 document.addEventListener('DOMContentLoaded', function () {
     const savedCustomerSelect = document.getElementById('saved_customer_select_bill');
     const customerNameInput = document.getElementById('customer_name');
+    const billStatusSelect = document.getElementById('bill_status');
+    const methodToggles = document.querySelectorAll('.bill-method-toggle');
 
     if (savedCustomerSelect && customerNameInput) {
         savedCustomerSelect.addEventListener('change', function () {
@@ -759,6 +904,40 @@ document.addEventListener('DOMContentLoaded', function () {
                 customerNameInput.value = customerName;
             }
         });
+    }
+
+    const syncMethodFields = function (prefix, value) {
+        document.querySelectorAll('.bill-method-account[data-method-prefix="' + prefix + '"]').forEach(function (wrap) {
+            const show = wrap.getAttribute('data-method-type') === value;
+            wrap.style.display = show ? '' : 'none';
+            wrap.querySelectorAll('select, input').forEach(function (field) {
+                field.disabled = !show;
+            });
+        });
+    };
+
+    methodToggles.forEach(function (select) {
+        syncMethodFields(select.getAttribute('data-target-prefix') || '', select.value);
+        select.addEventListener('change', function () {
+            syncMethodFields(select.getAttribute('data-target-prefix') || '', select.value);
+        });
+    });
+
+    if (billStatusSelect) {
+        const syncPaidFields = function () {
+            const show = billStatusSelect.value === 'paid';
+            document.querySelectorAll('.bill-paid-fields').forEach(function (field) {
+                field.style.display = show ? '' : 'none';
+            });
+            if (show) {
+                const paidFrom = document.getElementById('paid_from_type');
+                if (paidFrom) {
+                    syncMethodFields('paid_from', paidFrom.value);
+                }
+            }
+        };
+        syncPaidFields();
+        billStatusSelect.addEventListener('change', syncPaidFields);
     }
 });
 </script>

@@ -25,8 +25,24 @@ if (!$txn) {
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $before = $txn;
 
-    $stmt = $pdo->prepare("DELETE FROM udhar_transactions WHERE id = :id AND udhar_id = :udhar_id");
-    $stmt->execute([':id' => $id, ':udhar_id' => $udharId]);
+    $pdo->beginTransaction();
+    try {
+        $linkedWalletTxnId = (int) ($txn['linked_wallet_txn_id'] ?? 0);
+        if ($linkedWalletTxnId > 0) {
+            $stmt = $pdo->prepare("DELETE FROM wallet_transactions WHERE id = :id");
+            $stmt->execute([':id' => $linkedWalletTxnId]);
+        }
+
+        $stmt = $pdo->prepare("DELETE FROM udhar_transactions WHERE id = :id AND udhar_id = :udhar_id");
+        $stmt->execute([':id' => $id, ':udhar_id' => $udharId]);
+        $pdo->commit();
+    } catch (Throwable $e) {
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+        flash_set('error', 'Could not delete transaction.');
+        app_redirect('udhar/view.php?id=' . $udharId);
+    }
 
     app_audit_log('udhar_transactions', $id, 'delete', is_array($before) ? $before : null, null);
 
@@ -81,6 +97,10 @@ require_once __DIR__ . '/../includes/sidebar.php';
             <div class="col-12 col-md-3">
                 <div class="text-muted small">Amount</div>
                 <div class="fw-semibold"><?= h(number_format((float) $txn['amount'], 2)) ?></div>
+            </div>
+            <div class="col-12 col-md-3">
+                <div class="text-muted small">Payment Method</div>
+                <div class="fw-semibold"><?= h((string) ($txn['payment_method'] ?? '')) ?></div>
             </div>
             <div class="col-12 col-md-3">
                 <div class="text-muted small">Notes</div>

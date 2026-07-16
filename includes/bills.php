@@ -37,7 +37,11 @@ function bill_ensure_schema(PDO $pdo): void
                 total_received DECIMAL(12,2) NOT NULL DEFAULT 0.00,
                 payment_date DATE NOT NULL,
                 due_date DATE NULL,
+                received_in_type VARCHAR(30) NOT NULL DEFAULT 'cash',
+                received_in_account_id BIGINT UNSIGNED NULL,
                 status ENUM('pending','paid') NOT NULL DEFAULT 'pending',
+                paid_from_type VARCHAR(30) NULL,
+                paid_from_account_id BIGINT UNSIGNED NULL,
                 notes VARCHAR(255) NULL,
                 collected_wallet_txn_id BIGINT UNSIGNED NULL,
                 paid_wallet_txn_id BIGINT UNSIGNED NULL,
@@ -71,8 +75,12 @@ function bill_ensure_schema(PDO $pdo): void
         'total_received' => "ALTER TABLE bill_payments ADD COLUMN total_received DECIMAL(12,2) NOT NULL DEFAULT 0.00 AFTER service_charge",
         'payment_date' => "ALTER TABLE bill_payments ADD COLUMN payment_date DATE NOT NULL AFTER total_received",
         'due_date' => "ALTER TABLE bill_payments ADD COLUMN due_date DATE NULL AFTER payment_date",
-        'status' => "ALTER TABLE bill_payments ADD COLUMN status ENUM('pending','paid') NOT NULL DEFAULT 'pending' AFTER due_date",
-        'notes' => "ALTER TABLE bill_payments ADD COLUMN notes VARCHAR(255) NULL AFTER status",
+        'received_in_type' => "ALTER TABLE bill_payments ADD COLUMN received_in_type VARCHAR(30) NOT NULL DEFAULT 'cash' AFTER due_date",
+        'received_in_account_id' => "ALTER TABLE bill_payments ADD COLUMN received_in_account_id BIGINT UNSIGNED NULL AFTER received_in_type",
+        'status' => "ALTER TABLE bill_payments ADD COLUMN status ENUM('pending','paid') NOT NULL DEFAULT 'pending' AFTER received_in_account_id",
+        'paid_from_type' => "ALTER TABLE bill_payments ADD COLUMN paid_from_type VARCHAR(30) NULL AFTER status",
+        'paid_from_account_id' => "ALTER TABLE bill_payments ADD COLUMN paid_from_account_id BIGINT UNSIGNED NULL AFTER paid_from_type",
+        'notes' => "ALTER TABLE bill_payments ADD COLUMN notes VARCHAR(255) NULL AFTER paid_from_account_id",
         'collected_wallet_txn_id' => "ALTER TABLE bill_payments ADD COLUMN collected_wallet_txn_id BIGINT UNSIGNED NULL AFTER notes",
         'paid_wallet_txn_id' => "ALTER TABLE bill_payments ADD COLUMN paid_wallet_txn_id BIGINT UNSIGNED NULL AFTER collected_wallet_txn_id",
         'paid_at' => "ALTER TABLE bill_payments ADD COLUMN paid_at DATETIME NULL AFTER paid_wallet_txn_id",
@@ -95,7 +103,11 @@ function bill_ensure_schema(PDO $pdo): void
         "ALTER TABLE bill_payments ADD KEY idx_bill_payments_payment_date (payment_date)",
         "ALTER TABLE bill_payments ADD KEY idx_bill_payments_due_date (due_date)",
         "ALTER TABLE bill_payments ADD KEY idx_bill_payments_company_name (company_name)",
+        "ALTER TABLE bill_payments ADD KEY idx_bill_payments_received_in_type (received_in_type)",
+        "ALTER TABLE bill_payments ADD KEY idx_bill_payments_received_in_account (received_in_account_id)",
         "ALTER TABLE bill_payments ADD KEY idx_bill_payments_status (status)",
+        "ALTER TABLE bill_payments ADD KEY idx_bill_payments_paid_from_type (paid_from_type)",
+        "ALTER TABLE bill_payments ADD KEY idx_bill_payments_paid_from_account (paid_from_account_id)",
         "ALTER TABLE bill_payments ADD KEY idx_bill_payments_customer_name (customer_name)",
         "ALTER TABLE bill_payments ADD KEY idx_bill_payments_paid_at (paid_at)",
         "ALTER TABLE bill_payments ADD KEY idx_bill_payments_collected_txn (collected_wallet_txn_id)",
@@ -182,48 +194,116 @@ function bill_cash_account_id(PDO $pdo): int
     return wallet_find_or_create_account_id($pdo, 'Cash', 'cash', null);
 }
 
+function bill_method_labels(): array
+{
+    return [
+        'cash' => 'Cash',
+        'jazzcash' => 'JazzCash',
+        'easypaisa' => 'EasyPaisa',
+        'bank' => 'Bank Account',
+        'other' => 'Other',
+    ];
+}
+
+function bill_method_label(string $method): string
+{
+    $labels = bill_method_labels();
+    return $labels[$method] ?? ucfirst(str_replace('_', ' ', $method));
+}
+
+function bill_accounts_by_method(PDO $pdo): array
+{
+    return [
+        'cash' => wallet_accounts($pdo, 'cash', true),
+        'jazzcash' => wallet_accounts($pdo, 'jazzcash', true),
+        'easypaisa' => wallet_accounts($pdo, 'easypaisa', true),
+        'bank' => wallet_accounts($pdo, 'bank', true),
+    ];
+}
+
+function bill_account_id_for_method(PDO $pdo, string $method, int $selectedAccountId = 0): ?int
+{
+    if ($method === 'other') {
+        return null;
+    }
+    if ($method === 'cash') {
+        return bill_cash_account_id($pdo);
+    }
+    if (!in_array($method, ['jazzcash', 'easypaisa', 'bank'], true)) {
+        return null;
+    }
+    if ($selectedAccountId > 0) {
+        $account = wallet_account($pdo, $selectedAccountId);
+        if ($account && (string) ($account['account_type'] ?? '') === $method) {
+            return $selectedAccountId;
+        }
+    }
+    $accounts = wallet_accounts($pdo, $method, true);
+    return isset($accounts[0]['id']) ? (int) $accounts[0]['id'] : null;
+}
+
 function bill_generate_id(): string
 {
     return 'BILL-' . date('Ymd-His');
 }
 
-function bill_insert_cash_collection_txn(PDO $pdo, int $cashAccountId, string $billId, string $customerName, string $companyName, string $paymentDate, float $totalReceived, float $serviceCharge, ?string $notes = null): int
+function bill_insert_collection_txn(PDO $pdo, string $receivedInType, ?int $receivedAccountId, string $billId, string $customerName, string $companyName, string $paymentDate, float $totalReceived, float $serviceCharge, ?string $notes = null): ?int
 {
+    $receivedInType = trim($receivedInType);
+    if ($receivedInType === 'other') {
+        return null;
+    }
+    $accountId = bill_account_id_for_method($pdo, $receivedInType, (int) ($receivedAccountId ?? 0));
+    if ($accountId === null || $accountId <= 0) {
+        throw new RuntimeException('Please select a valid collection account.');
+    }
+
     $stmt = $pdo->prepare("
         INSERT INTO wallet_transactions
-            (account_id, date, customer_name, number, transaction_id, type, amount, charges, commission_method, account_amount, payment_status, completed_at, remarks)
+            (account_id, date, customer_name, number, transaction_id, type, amount, charges, commission_method, account_amount, payment_status, completed_at, entry_context, remarks)
         VALUES
-            (:account_id, :date, :customer_name, NULL, :transaction_id, 'receiving', :txn_amount, :charges, 'separate_cash', :account_amount, 'completed', NOW(), :remarks)
+            (:account_id, :date, :customer_name, NULL, :transaction_id, 'receiving', :txn_amount, :charges, 'separate_cash', :account_amount, 'completed', NOW(), :entry_context, :remarks)
     ");
     $stmt->execute([
-        ':account_id' => $cashAccountId,
+        ':account_id' => $accountId,
         ':date' => $paymentDate,
         ':customer_name' => $customerName,
         ':transaction_id' => $billId,
         ':txn_amount' => $totalReceived,
         ':account_amount' => $totalReceived,
         ':charges' => $serviceCharge,
-        ':remarks' => 'Bill Collection #' . $billId . ' - ' . $companyName . ($notes !== null && trim($notes) !== '' ? ' - ' . trim($notes) : ''),
+        ':entry_context' => $receivedInType === 'cash' ? 'external' : 'bill_collection_online',
+        ':remarks' => 'Bill Collection #' . $billId . ' [' . bill_method_label($receivedInType) . '] - ' . $companyName . ($notes !== null && trim($notes) !== '' ? ' - ' . trim($notes) : ''),
     ]);
     return (int) $pdo->lastInsertId();
 }
 
-function bill_insert_cash_payment_txn(PDO $pdo, int $cashAccountId, string $billId, string $customerName, string $companyName, string $paidDate, float $billAmount, ?string $notes = null): int
+function bill_insert_payment_txn(PDO $pdo, string $paidFromType, ?int $paidFromAccountId, string $billId, string $customerName, string $companyName, string $paidDate, float $billAmount, ?string $notes = null): ?int
 {
+    $paidFromType = trim($paidFromType);
+    if ($paidFromType === '' || $paidFromType === 'other') {
+        return null;
+    }
+    $accountId = bill_account_id_for_method($pdo, $paidFromType, (int) ($paidFromAccountId ?? 0));
+    if ($accountId === null || $accountId <= 0) {
+        throw new RuntimeException('Please select a valid payment account.');
+    }
+
     $stmt = $pdo->prepare("
         INSERT INTO wallet_transactions
-            (account_id, date, customer_name, number, transaction_id, type, amount, charges, commission_method, account_amount, payment_status, completed_at, remarks)
+            (account_id, date, customer_name, number, transaction_id, type, amount, charges, commission_method, account_amount, payment_status, completed_at, entry_context, remarks)
         VALUES
-            (:account_id, :date, :customer_name, NULL, :transaction_id, 'sending', :txn_amount, 0, 'separate_cash', :account_amount, 'completed', NOW(), :remarks)
+            (:account_id, :date, :customer_name, NULL, :transaction_id, 'sending', :txn_amount, 0, 'separate_cash', :account_amount, 'completed', NOW(), :entry_context, :remarks)
     ");
     $stmt->execute([
-        ':account_id' => $cashAccountId,
+        ':account_id' => $accountId,
         ':date' => $paidDate,
         ':customer_name' => $customerName,
         ':transaction_id' => $billId . '-PAID',
         ':txn_amount' => $billAmount,
         ':account_amount' => $billAmount,
-        ':remarks' => 'Bill Paid #' . $billId . ' - ' . $companyName . ($notes !== null && trim($notes) !== '' ? ' - ' . trim($notes) : ''),
+        ':entry_context' => $paidFromType === 'cash' ? 'external' : 'bill_payment_online',
+        ':remarks' => 'Bill Paid #' . $billId . ' [' . bill_method_label($paidFromType) . '] - ' . $companyName . ($notes !== null && trim($notes) !== '' ? ' - ' . trim($notes) : ''),
     ]);
     return (int) $pdo->lastInsertId();
 }
@@ -342,9 +422,15 @@ function bill_list(PDO $pdo, array $filters = [], int $limit = 300): array
     $where = bill_build_where($filters, $params, false);
 
     $stmt = $pdo->prepare("
-        SELECT bp.*, a.name AS created_by_name
+        SELECT bp.*, a.name AS created_by_name,
+               recv_acc.account_name AS received_in_account_name,
+               recv_acc.account_type AS received_in_account_type,
+               paid_acc.account_name AS paid_from_account_name,
+               paid_acc.account_type AS paid_from_account_type
         FROM bill_payments bp
         LEFT JOIN admins a ON a.id = bp.created_by
+        LEFT JOIN accounts recv_acc ON recv_acc.id = bp.received_in_account_id
+        LEFT JOIN accounts paid_acc ON paid_acc.id = bp.paid_from_account_id
         {$where}
         ORDER BY bp.payment_date DESC, bp.id DESC
         LIMIT {$limit}

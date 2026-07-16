@@ -529,7 +529,10 @@ try {
     $udharRecoveryCash = (float) $pdo->query("
         SELECT COALESCE(SUM(amount), 0)
         FROM udhar_transactions
-        WHERE txn_date = CURDATE() AND txn_type = 'payment'
+        WHERE txn_date = CURDATE()
+          AND txn_type = 'payment'
+          AND COALESCE(linked_wallet_txn_id, 0) = 0
+          AND COALESCE(payment_method, 'cash') = 'cash'
     ")->fetchColumn();
     $creditAdvanceCash = (float) $pdo->query("
         SELECT COALESCE(SUM(amount), 0)

@@ -8,6 +8,75 @@ $pageTitle = 'Udhar Details - Shop Management';
 
 $pdo = db();
 
+function udhar_method_labels(): array
+{
+    return [
+        'cash' => 'Cash',
+        'jazzcash' => 'JazzCash',
+        'easypaisa' => 'EasyPaisa',
+        'bank' => 'Bank Account',
+        'other' => 'Other',
+    ];
+}
+
+function udhar_method_label(string $method): string
+{
+    $labels = udhar_method_labels();
+    return $labels[$method] ?? ucfirst(str_replace('_', ' ', $method));
+}
+
+function udhar_method_accounts(PDO $pdo): array
+{
+    return [
+        'jazzcash' => wallet_accounts($pdo, 'jazzcash', true),
+        'easypaisa' => wallet_accounts($pdo, 'easypaisa', true),
+        'bank' => wallet_accounts($pdo, 'bank', true),
+    ];
+}
+
+function udhar_account_id_for_method(PDO $pdo, string $method, int $selectedAccountId = 0): ?int
+{
+    if ($method === 'other') {
+        return null;
+    }
+    if ($method === 'cash') {
+        return bill_cash_account_id($pdo);
+    }
+    if (!in_array($method, ['jazzcash', 'easypaisa', 'bank'], true)) {
+        return null;
+    }
+    if ($selectedAccountId > 0) {
+        $account = wallet_account($pdo, $selectedAccountId);
+        if ($account && (string) ($account['account_type'] ?? '') === $method) {
+            return $selectedAccountId;
+        }
+    }
+    $accounts = wallet_accounts($pdo, $method, true);
+    return isset($accounts[0]['id']) ? (int) ($accounts[0]['id'] ?? 0) : null;
+}
+
+function udhar_insert_wallet_recovery_txn(PDO $pdo, int $accountId, string $method, int $udharId, string $txnDate, string $customerName, string $phone, float $amount, ?string $notes = null): int
+{
+    $stmt = $pdo->prepare("
+        INSERT INTO wallet_transactions
+            (account_id, date, customer_name, number, transaction_id, type, amount, charges, commission_method, account_amount, payment_status, completed_at, entry_context, remarks)
+        VALUES
+            (:account_id, :date, :customer_name, :number, :transaction_id, 'receiving', :amount, 0, 'separate_cash', :account_amount, 'completed', NOW(), :entry_context, :remarks)
+    ");
+    $stmt->execute([
+        ':account_id' => $accountId,
+        ':date' => $txnDate,
+        ':customer_name' => $customerName,
+        ':number' => $phone !== '' ? $phone : null,
+        ':transaction_id' => 'UDHAR-' . $udharId . '-' . date('His'),
+        ':amount' => $amount,
+        ':account_amount' => $amount,
+        ':entry_context' => $method === 'cash' ? 'external' : 'udhar_recovery_online',
+        ':remarks' => 'Udhar Recovery #' . $udharId . ' [' . udhar_method_label($method) . ']' . ($notes !== null && trim($notes) !== '' ? ' - ' . trim($notes) : ''),
+    ]);
+    return (int) $pdo->lastInsertId();
+}
+
 function udhar_ensure_ledger(PDO $pdo, int $udharId): void
 {
     if ($udharId <= 0) {
@@ -118,6 +187,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $txnType = trim((string) ($_POST['txn_type'] ?? ''));
         $amount = trim((string) ($_POST['amount'] ?? ''));
         $notes = trim((string) ($_POST['notes'] ?? ''));
+        $paymentMethod = trim((string) ($_POST['payment_method'] ?? 'cash'));
+        $receivedAccountId = (int) ($_POST['received_account_id'] ?? 0);
 
         if ($txnDate === '') {
             flash_set('error', 'Date is required.');
@@ -131,18 +202,56 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             flash_set('error', 'Amount must be a positive number.');
             app_redirect('udhar/view.php?id=' . $id);
         }
+        if ($txnType === 'payment' && !array_key_exists($paymentMethod, udhar_method_labels())) {
+            flash_set('error', 'Invalid payment method.');
+            app_redirect('udhar/view.php?id=' . $id);
+        }
+        if ($txnType === 'payment' && !in_array($paymentMethod, ['cash', 'other'], true) && $receivedAccountId <= 0) {
+            flash_set('error', 'Please select where the recovery was received.');
+            app_redirect('udhar/view.php?id=' . $id);
+        }
 
-        $stmt = $pdo->prepare("
-            INSERT INTO udhar_transactions (udhar_id, txn_date, txn_type, amount, notes)
-            VALUES (:udhar_id, :txn_date, :txn_type, :amount, :notes)
-        ");
-        $stmt->execute([
-            ':udhar_id' => $id,
-            ':txn_date' => $txnDate,
-            ':txn_type' => $txnType,
-            ':amount' => (float) $amount,
-            ':notes' => $notes !== '' ? $notes : null,
-        ]);
+        $stmt = $pdo->prepare("SELECT name, phone FROM udhar_customers WHERE id = :id LIMIT 1");
+        $stmt->execute([':id' => $id]);
+        $customerRow = $stmt->fetch() ?: [];
+        $customerName = trim((string) ($customerRow['name'] ?? ''));
+        $customerPhone = trim((string) ($customerRow['phone'] ?? ''));
+
+        $walletTxnId = null;
+        $accountId = null;
+
+        $pdo->beginTransaction();
+        try {
+            if ($txnType === 'payment' && $paymentMethod !== 'other') {
+                $accountId = udhar_account_id_for_method($pdo, $paymentMethod, $receivedAccountId);
+                if ($accountId === null || $accountId <= 0) {
+                    throw new RuntimeException('Please select a valid receiving account.');
+                }
+                $walletTxnId = udhar_insert_wallet_recovery_txn($pdo, $accountId, $paymentMethod, $id, $txnDate, $customerName, $customerPhone, (float) $amount, $notes !== '' ? $notes : null);
+            }
+
+            $stmt = $pdo->prepare("
+                INSERT INTO udhar_transactions (udhar_id, txn_date, txn_type, amount, payment_method, received_account_id, linked_wallet_txn_id, notes)
+                VALUES (:udhar_id, :txn_date, :txn_type, :amount, :payment_method, :received_account_id, :linked_wallet_txn_id, :notes)
+            ");
+            $stmt->execute([
+                ':udhar_id' => $id,
+                ':txn_date' => $txnDate,
+                ':txn_type' => $txnType,
+                ':amount' => (float) $amount,
+                ':payment_method' => $txnType === 'payment' ? $paymentMethod : null,
+                ':received_account_id' => $txnType === 'payment' ? $accountId : null,
+                ':linked_wallet_txn_id' => $txnType === 'payment' ? $walletTxnId : null,
+                ':notes' => $notes !== '' ? $notes : null,
+            ]);
+            $pdo->commit();
+        } catch (Throwable $e) {
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            flash_set('error', 'Could not save transaction.');
+            app_redirect('udhar/view.php?id=' . $id);
+        }
 
         udhar_update_status($pdo, $id);
         flash_set('success', $txnType === 'udhar' ? 'Udhar entry saved.' : 'Payment saved.');
@@ -167,9 +276,11 @@ if ($remaining < 0) {
 $status = $balance <= 0 ? 'cleared' : 'pending';
 
 $stmt = $pdo->prepare("
-    SELECT id, txn_date, txn_type, amount, notes, created_at
-    FROM udhar_transactions
-    WHERE udhar_id = :id
+    SELECT ut.id, ut.txn_date, ut.txn_type, ut.amount, ut.payment_method, ut.notes, ut.created_at,
+           acc.account_name AS received_account_name
+    FROM udhar_transactions ut
+    LEFT JOIN accounts acc ON acc.id = ut.received_account_id
+    WHERE ut.udhar_id = :id
     ORDER BY txn_date DESC, id DESC
 ");
 $stmt->execute([':id' => $id]);
@@ -179,6 +290,9 @@ $txnDate = date('Y-m-d');
 $txnType = 'payment';
 $txnAmount = '';
 $txnNotes = '';
+$paymentMethod = 'cash';
+$receivedAccountId = 0;
+$methodAccounts = udhar_method_accounts($pdo);
 
 require_once __DIR__ . '/../includes/header.php';
 require_once __DIR__ . '/../includes/sidebar.php';
@@ -280,6 +394,43 @@ require_once __DIR__ . '/../includes/sidebar.php';
                 <label class="form-label" for="amount">Amount</label>
                 <input class="form-control" type="number" step="0.01" id="amount" name="amount" value="<?= h($txnAmount) ?>" required>
             </div>
+            <div class="col-12 col-md-3">
+                <label class="form-label" for="payment_method">Payment Received Method</label>
+                <select class="form-select udhar-method-toggle" id="payment_method" name="payment_method">
+                    <option value="cash" <?= $paymentMethod === 'cash' ? 'selected' : '' ?>>Cash</option>
+                    <option value="jazzcash" <?= $paymentMethod === 'jazzcash' ? 'selected' : '' ?>>JazzCash</option>
+                    <option value="easypaisa" <?= $paymentMethod === 'easypaisa' ? 'selected' : '' ?>>EasyPaisa</option>
+                    <option value="bank" <?= $paymentMethod === 'bank' ? 'selected' : '' ?>>Bank Account</option>
+                    <option value="other" <?= $paymentMethod === 'other' ? 'selected' : '' ?>>Other</option>
+                </select>
+            </div>
+            <div class="col-12 col-md-3 udhar-method-account" data-method-type="jazzcash"<?= $paymentMethod === 'jazzcash' ? '' : ' style="display:none;"' ?>>
+                <label class="form-label" for="received_account_jazzcash">Received In JazzCash</label>
+                <select class="form-select" id="received_account_jazzcash" name="received_account_id">
+                    <option value="">-- Select JazzCash --</option>
+                    <?php foreach (($methodAccounts['jazzcash'] ?? []) as $account): ?>
+                        <option value="<?= (int) ($account['id'] ?? 0) ?>" <?= $paymentMethod === 'jazzcash' && $receivedAccountId === (int) ($account['id'] ?? 0) ? 'selected' : '' ?>><?= h((string) ($account['account_name'] ?? '')) ?></option>
+                    <?php endforeach; ?>
+                </select>
+            </div>
+            <div class="col-12 col-md-3 udhar-method-account" data-method-type="easypaisa"<?= $paymentMethod === 'easypaisa' ? '' : ' style="display:none;"' ?>>
+                <label class="form-label" for="received_account_easypaisa">Received In EasyPaisa</label>
+                <select class="form-select" id="received_account_easypaisa" name="received_account_id">
+                    <option value="">-- Select EasyPaisa --</option>
+                    <?php foreach (($methodAccounts['easypaisa'] ?? []) as $account): ?>
+                        <option value="<?= (int) ($account['id'] ?? 0) ?>" <?= $paymentMethod === 'easypaisa' && $receivedAccountId === (int) ($account['id'] ?? 0) ? 'selected' : '' ?>><?= h((string) ($account['account_name'] ?? '')) ?></option>
+                    <?php endforeach; ?>
+                </select>
+            </div>
+            <div class="col-12 col-md-3 udhar-method-account" data-method-type="bank"<?= $paymentMethod === 'bank' ? '' : ' style="display:none;"' ?>>
+                <label class="form-label" for="received_account_bank">Received In Bank</label>
+                <select class="form-select" id="received_account_bank" name="received_account_id">
+                    <option value="">-- Select Bank Account --</option>
+                    <?php foreach (($methodAccounts['bank'] ?? []) as $account): ?>
+                        <option value="<?= (int) ($account['id'] ?? 0) ?>" <?= $paymentMethod === 'bank' && $receivedAccountId === (int) ($account['id'] ?? 0) ? 'selected' : '' ?>><?= h((string) ($account['account_name'] ?? '')) ?></option>
+                    <?php endforeach; ?>
+                </select>
+            </div>
             <div class="col-12 col-md-6">
                 <label class="form-label" for="notes">Notes</label>
                 <input class="form-control" type="text" id="notes" name="notes" value="<?= h($txnNotes) ?>">
@@ -300,6 +451,8 @@ require_once __DIR__ . '/../includes/sidebar.php';
                     <th>Date</th>
                     <th>Type</th>
                     <th class="text-end">Amount</th>
+                    <th>Payment Method</th>
+                    <th>Received In</th>
                     <th>Notes</th>
                     <th>Created At</th>
                     <?php if (app_can_edit_delete_records()): ?>
@@ -319,6 +472,8 @@ require_once __DIR__ . '/../includes/sidebar.php';
                             <?php endif; ?>
                         </td>
                         <td class="text-end"><?= h(number_format((float) $t['amount'], 2)) ?></td>
+                        <td><?= h(($t['txn_type'] ?? '') === 'payment' ? udhar_method_label((string) ($t['payment_method'] ?? 'cash')) : '-') ?></td>
+                        <td><?= h(trim((string) ($t['received_account_name'] ?? '')) !== '' ? (string) ($t['received_account_name'] ?? '') : (($t['txn_type'] ?? '') === 'payment' ? udhar_method_label((string) ($t['payment_method'] ?? 'cash')) : '-')) ?></td>
                         <td><?= h((string) ($t['notes'] ?? '')) ?></td>
                         <td><?= h((string) $t['created_at']) ?></td>
                         <?php if (app_can_edit_delete_records()): ?>
@@ -331,7 +486,7 @@ require_once __DIR__ . '/../includes/sidebar.php';
                 <?php endforeach; ?>
                 <?php if (!$txns): ?>
                     <tr>
-                        <td colspan="<?= h((string) (5 + (app_can_edit_delete_records() ? 1 : 0))) ?>" class="text-center text-muted py-4">No transactions yet.</td>
+                        <td colspan="<?= h((string) (7 + (app_can_edit_delete_records() ? 1 : 0))) ?>" class="text-center text-muted py-4">No transactions yet.</td>
                     </tr>
                 <?php endif; ?>
                 </tbody>
@@ -339,5 +494,37 @@ require_once __DIR__ . '/../includes/sidebar.php';
         </div>
     </div>
 </div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const txnType = document.getElementById('txn_type');
+    const paymentMethod = document.getElementById('payment_method');
+    const paymentMethodWrap = paymentMethod ? paymentMethod.closest('.col-12.col-md-3') : null;
+    const syncMethodFields = function () {
+        const showPaymentFields = txnType && txnType.value === 'payment';
+        const method = paymentMethod ? paymentMethod.value : 'cash';
+        if (paymentMethodWrap) {
+            paymentMethodWrap.style.display = showPaymentFields ? '' : 'none';
+        }
+        if (paymentMethod) {
+            paymentMethod.disabled = !showPaymentFields;
+        }
+        document.querySelectorAll('.udhar-method-account').forEach(function (wrap) {
+            const show = showPaymentFields && wrap.getAttribute('data-method-type') === method;
+            wrap.style.display = show ? '' : 'none';
+            wrap.querySelectorAll('select, input').forEach(function (field) {
+                field.disabled = !show;
+            });
+        });
+    };
+    if (txnType) {
+        txnType.addEventListener('change', syncMethodFields);
+    }
+    if (paymentMethod) {
+        paymentMethod.addEventListener('change', syncMethodFields);
+    }
+    syncMethodFields();
+});
+</script>
 
 <?php require_once __DIR__ . '/../includes/footer.php'; ?>

@@ -287,15 +287,48 @@ function app_ensure_schema(PDO $pdo): void
                 txn_date DATE NOT NULL,
                 txn_type ENUM('udhar','payment') NOT NULL,
                 amount DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+                payment_method VARCHAR(30) NULL,
+                received_account_id BIGINT UNSIGNED NULL,
+                linked_wallet_txn_id BIGINT UNSIGNED NULL,
                 notes VARCHAR(255) NULL,
                 created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 PRIMARY KEY (id),
                 KEY idx_udhar_txn_udhar_id (udhar_id),
                 KEY idx_udhar_txn_date (txn_date),
                 KEY idx_udhar_txn_type (txn_type),
+                KEY idx_udhar_txn_payment_method (payment_method),
+                KEY idx_udhar_txn_received_account (received_account_id),
+                KEY idx_udhar_txn_wallet_link (linked_wallet_txn_id),
                 CONSTRAINT fk_udhar_txn_udhar_id FOREIGN KEY (udhar_id) REFERENCES udhar_customers(id) ON UPDATE CASCADE ON DELETE CASCADE
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
         ");
+    } catch (Throwable $e) {
+    }
+
+    try {
+        $stmt = $pdo->query("SHOW COLUMNS FROM udhar_transactions LIKE 'payment_method'");
+        if (!(bool) $stmt->fetchColumn()) {
+            $pdo->exec("ALTER TABLE udhar_transactions ADD COLUMN payment_method VARCHAR(30) NULL AFTER amount");
+            $pdo->exec("ALTER TABLE udhar_transactions ADD KEY idx_udhar_txn_payment_method (payment_method)");
+        }
+    } catch (Throwable $e) {
+    }
+
+    try {
+        $stmt = $pdo->query("SHOW COLUMNS FROM udhar_transactions LIKE 'received_account_id'");
+        if (!(bool) $stmt->fetchColumn()) {
+            $pdo->exec("ALTER TABLE udhar_transactions ADD COLUMN received_account_id BIGINT UNSIGNED NULL AFTER payment_method");
+            $pdo->exec("ALTER TABLE udhar_transactions ADD KEY idx_udhar_txn_received_account (received_account_id)");
+        }
+    } catch (Throwable $e) {
+    }
+
+    try {
+        $stmt = $pdo->query("SHOW COLUMNS FROM udhar_transactions LIKE 'linked_wallet_txn_id'");
+        if (!(bool) $stmt->fetchColumn()) {
+            $pdo->exec("ALTER TABLE udhar_transactions ADD COLUMN linked_wallet_txn_id BIGINT UNSIGNED NULL AFTER received_account_id");
+            $pdo->exec("ALTER TABLE udhar_transactions ADD KEY idx_udhar_txn_wallet_link (linked_wallet_txn_id)");
+        }
     } catch (Throwable $e) {
     }
 

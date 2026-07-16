@@ -31,6 +31,18 @@ function report_get_date(string $value, string $fallback): string
     return $fallback;
 }
 
+function report_method_label(string $method): string
+{
+    $labels = [
+        'cash' => 'Cash',
+        'jazzcash' => 'JazzCash',
+        'easypaisa' => 'EasyPaisa',
+        'bank' => 'Bank Account',
+        'other' => 'Other',
+    ];
+    return $labels[$method] ?? ucfirst(str_replace('_', ' ', $method));
+}
+
 function report_filters_from_request(): array
 {
     $today = date('Y-m-d');
@@ -210,18 +222,22 @@ function report_fetch(PDO $pdo, array $filters): array
         $summary = bill_summary($pdo, $filtersForBills);
 
         return [
-            'headers' => ['Bill ID', 'Customer Name', 'Company', 'Bill Amount', 'Service Charge', 'Total Received', 'Payment Date', 'Due Date', 'Status', 'Paid At', 'Notes'],
+            'headers' => ['Bill ID', 'Customer Name', 'Company', 'Received In', 'Received Account', 'Bill Amount', 'Service Charge', 'Total Received', 'Payment Date', 'Due Date', 'Status', 'Paid From', 'Paid Account', 'Paid At', 'Notes'],
             'rows' => array_map(static function (array $r): array {
                 return [
                     (string) ($r['bill_id'] ?? ''),
                     (string) ($r['customer_name'] ?? ''),
                     (string) ($r['company_name'] ?? ''),
+                    report_method_label((string) ($r['received_in_type'] ?? 'cash')),
+                    (string) ($r['received_in_account_name'] ?? ''),
                     number_format((float) ($r['bill_amount'] ?? 0), 2, '.', ''),
                     number_format((float) ($r['service_charge'] ?? 0), 2, '.', ''),
                     number_format((float) ($r['total_received'] ?? 0), 2, '.', ''),
                     (string) ($r['payment_date'] ?? ''),
                     (string) ($r['due_date'] ?? ''),
                     (string) ($r['status'] ?? ''),
+                    trim((string) ($r['paid_from_type'] ?? '')) !== '' ? report_method_label((string) ($r['paid_from_type'] ?? '')) : '',
+                    (string) ($r['paid_from_account_name'] ?? ''),
                     (string) ($r['paid_at'] ?? ''),
                     (string) ($r['notes'] ?? ''),
                 ];
@@ -419,9 +435,10 @@ function report_fetch(PDO $pdo, array $filters): array
 
     if ($module === 'udhar') {
         $stmt = $pdo->prepare("
-            SELECT ut.txn_date, uc.name, uc.phone, ut.txn_type, ut.amount, ut.notes, ut.created_at
+            SELECT ut.txn_date, uc.name, uc.phone, ut.txn_type, ut.amount, ut.payment_method, acc.account_name AS received_account_name, ut.notes, ut.created_at
             FROM udhar_transactions ut
             JOIN udhar_customers uc ON uc.id = ut.udhar_id
+            LEFT JOIN accounts acc ON acc.id = ut.received_account_id
             WHERE ut.txn_date >= :from AND ut.txn_date <= :to
             ORDER BY ut.txn_date ASC, ut.id ASC
         ");
@@ -439,7 +456,7 @@ function report_fetch(PDO $pdo, array $filters): array
         }
 
         return [
-            'headers' => ['Date', 'Customer', 'Phone', 'Type', 'Amount', 'Notes', 'Created At'],
+            'headers' => ['Date', 'Customer', 'Phone', 'Type', 'Amount', 'Payment Method', 'Received In', 'Notes', 'Created At'],
             'rows' => array_map(static function (array $r): array {
                 return [
                     (string) ($r['txn_date'] ?? ''),
@@ -447,6 +464,8 @@ function report_fetch(PDO $pdo, array $filters): array
                     (string) ($r['phone'] ?? ''),
                     (string) ($r['txn_type'] ?? ''),
                     number_format((float) ($r['amount'] ?? 0), 2, '.', ''),
+                    (string) (($r['txn_type'] ?? '') === 'payment' ? report_method_label((string) ($r['payment_method'] ?? 'cash')) : ''),
+                    (string) ($r['received_account_name'] ?? ''),
                     (string) ($r['notes'] ?? ''),
                     (string) ($r['created_at'] ?? ''),
                 ];
