@@ -738,6 +738,7 @@ $extraHead = '<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/char
                         <div class="text-sm font-semibold text-gray-500 uppercase tracking-wider">Sales</div>
                     </div>
                     <div class="text-2xl font-bold text-gray-900">Rs <?= money($rangeSales) ?></div>
+                    <div class="text-xs text-gray-400 mt-2"><?= h($rangeLabel) ?></div>
                 </div>
             </div>
             <div class="col-12 col-sm-6 col-md-4 col-lg-3">
@@ -749,6 +750,7 @@ $extraHead = '<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/char
                         <div class="text-sm font-semibold text-gray-500 uppercase tracking-wider">Expenses</div>
                     </div>
                     <div class="text-2xl font-bold text-gray-900">Rs <?= money($rangeExpense) ?></div>
+                    <div class="text-xs text-gray-400 mt-2"><?= h($rangeLabel) ?>, paid bills only</div>
                 </div>
             </div>
             <div class="col-12 col-sm-6 col-md-4 col-lg-3">
@@ -760,6 +762,7 @@ $extraHead = '<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/char
                         <div class="text-sm font-semibold text-gray-500 uppercase tracking-wider">Load Sold</div>
                     </div>
                     <div class="text-2xl font-bold text-gray-900">Rs <?= money($rangeLoadSold) ?></div>
+                    <div class="text-xs text-gray-400 mt-2"><?= h($rangeLabel) ?></div>
                 </div>
             </div>
             <div class="col-12 col-sm-6 col-md-4 col-lg-3">
@@ -771,6 +774,7 @@ $extraHead = '<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/char
                         <div class="text-sm font-semibold text-gray-500 uppercase tracking-wider">Dealer Payments</div>
                     </div>
                     <div class="text-2xl font-bold text-gray-900">Rs <?= money($rangeDealerPayments) ?></div>
+                    <div class="text-xs text-gray-400 mt-2"><?= h($rangeLabel) ?></div>
                 </div>
             </div>
             <div class="col-12 col-sm-6 col-md-4 col-lg-3">
@@ -782,6 +786,7 @@ $extraHead = '<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/char
                         <div class="text-sm font-semibold text-gray-500 uppercase tracking-wider">Udhar Recovery</div>
                     </div>
                     <div class="text-2xl font-bold text-gray-900">Rs <?= money($rangeUdharRecovery) ?></div>
+                    <div class="text-xs text-gray-400 mt-2"><?= h($rangeLabel) ?></div>
                 </div>
             </div>
             <div class="col-12 col-sm-6 col-md-4 col-lg-3">
@@ -793,6 +798,7 @@ $extraHead = '<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/char
                         <div class="text-sm font-semibold text-gray-500 uppercase tracking-wider">Credit Advance</div>
                     </div>
                     <div class="text-2xl font-bold text-gray-900">Rs <?= money($rangeCreditAdvance) ?></div>
+                    <div class="text-xs text-gray-400 mt-2"><?= h($rangeLabel) ?></div>
                 </div>
             </div>
             <div class="col-12 col-sm-6 col-md-4 col-lg-3">
@@ -804,6 +810,7 @@ $extraHead = '<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/char
                         <div class="text-sm font-semibold text-gray-500 uppercase tracking-wider">Commission Earned</div>
                     </div>
                     <div class="text-2xl font-bold text-gray-900">Rs <?= money($rangeWalletCommission) ?></div>
+                    <div class="text-xs text-gray-400 mt-2"><?= h($rangeLabel) ?></div>
                 </div>
             </div>
             <div class="col-12 col-sm-6 col-md-4 col-lg-3">
@@ -815,6 +822,7 @@ $extraHead = '<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/char
                         <div class="text-sm font-semibold text-gray-500 uppercase tracking-wider">Cash Withdrawals</div>
                     </div>
                     <div class="text-2xl font-bold text-gray-900">Rs <?= money((float) ($walletAll['sending'] ?? 0)) ?></div>
+                    <div class="text-xs text-gray-400 mt-2"><?= h($rangeLabel) ?></div>
                 </div>
             </div>
             <div class="col-12 col-sm-6 col-md-4 col-lg-3">
@@ -826,6 +834,7 @@ $extraHead = '<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/char
                         <div class="text-sm font-semibold text-gray-500 uppercase tracking-wider">Account Deductions</div>
                     </div>
                     <div class="text-2xl font-bold text-gray-900">Rs <?= money($rangeWalletAccountDeduction) ?></div>
+                    <div class="text-xs text-gray-400 mt-2"><?= h($rangeLabel) ?></div>
                 </div>
             </div>
             <div class="col-12 col-sm-6 col-md-4 col-lg-3">
@@ -838,6 +847,7 @@ $extraHead = '<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/char
                     </div>
                     <div class="text-2xl font-bold text-gray-900"><?= h((string) $rangePendingPayments) ?></div>
                     <div class="text-sm text-gray-500 mt-1">Rs <?= money($rangePendingAmount) ?></div>
+                    <div class="text-xs text-gray-400 mt-2">Pending within <?= h($rangeLabel) ?></div>
                 </div>
             </div>
             <?php if ($canViewProfit): ?>
@@ -850,6 +860,7 @@ $extraHead = '<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/char
                             <div class="text-sm font-bold text-emerald-700 uppercase tracking-wider">Total Profit</div>
                         </div>
                         <div class="text-2xl font-bold text-emerald-700">Rs <?= money($rangeProfit) ?></div>
+                        <div class="text-xs text-emerald-600 mt-2"><?= h($rangeLabel) ?></div>
                     </div>
                 </div>
             <?php endif; ?>
@@ -871,6 +882,7 @@ $extraHead = '<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/char
                 <div class="p-2.5 bg-gray-100 text-gray-700 rounded-xl group-hover:bg-gray-200 transition-colors"><i data-lucide="layers" class="w-5 h-5"></i></div>
             </div>
             <div class="text-3xl font-extrabold text-gray-900 tracking-tight">Rs <?= money((float) ($walletAll['opening'] ?? 0)) ?></div>
+            <div class="text-xs text-gray-400 mt-2"><?= h($rangeLabel) ?> opening total</div>
         </div>
     </div>
 
@@ -882,6 +894,7 @@ $extraHead = '<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/char
                 <div class="p-2.5 bg-emerald-100 text-emerald-600 rounded-xl group-hover:bg-emerald-200 transition-colors"><i data-lucide="arrow-down-left" class="w-5 h-5"></i></div>
             </div>
             <div class="text-3xl font-extrabold text-gray-900 tracking-tight">Rs <?= money((float) ($walletAll['receiving'] ?? 0)) ?></div>
+            <div class="text-xs text-gray-400 mt-2"><?= h($rangeLabel) ?>, completed only</div>
         </div>
     </div>
 
@@ -893,6 +906,7 @@ $extraHead = '<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/char
                 <div class="p-2.5 bg-red-100 text-red-600 rounded-xl group-hover:bg-red-200 transition-colors"><i data-lucide="arrow-up-right" class="w-5 h-5"></i></div>
             </div>
             <div class="text-3xl font-extrabold text-gray-900 tracking-tight">Rs <?= money((float) ($walletAll['sending'] ?? 0)) ?></div>
+            <div class="text-xs text-gray-400 mt-2"><?= h($rangeLabel) ?></div>
         </div>
     </div>
 

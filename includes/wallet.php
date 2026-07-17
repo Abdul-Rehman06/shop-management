@@ -293,10 +293,10 @@ function wallet_balance_summary(PDO $pdo, int $accountId): array
     $stmt = $pdo->prepare("
         SELECT
             COALESCE(SUM(CASE WHEN type='opening' THEN amount ELSE 0 END), 0) AS opening_total,
-            COALESCE(SUM(CASE WHEN type='receiving' AND payment_status <> 'cancelled' THEN amount ELSE 0 END), 0) AS receiving_total,
+            COALESCE(SUM(CASE WHEN type='receiving' AND payment_status = 'completed' THEN amount ELSE 0 END), 0) AS receiving_total,
             COALESCE(SUM(CASE WHEN type='sending' AND payment_status = 'completed' THEN amount ELSE 0 END), 0) AS sending_total,
             COALESCE(SUM(CASE WHEN type='sending' AND payment_status = 'completed' THEN account_amount ELSE 0 END), 0) AS account_deduction_total,
-            COALESCE(SUM(CASE WHEN type <> 'opening' AND payment_status <> 'cancelled' AND (type <> 'sending' OR payment_status = 'completed') THEN charges ELSE 0 END), 0) AS charges_total
+            COALESCE(SUM(CASE WHEN type='receiving' AND payment_status = 'completed' THEN charges WHEN type='sending' AND payment_status = 'completed' THEN charges ELSE 0 END), 0) AS charges_total
         FROM wallet_transactions
         WHERE account_id = :account_id
     ");

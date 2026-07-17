@@ -1381,28 +1381,34 @@ $isInternalTransferEdit = $editTxn && (string) ($editTxn['entry_context'] ?? 'ex
         <div class="col-12 col-xl-5">
             <div class="grid grid-cols-2 gap-4">
                 <div class="bg-white/60 p-4 rounded-2xl border border-white shadow-sm hover:shadow-md transition-shadow group">
-                    <div class="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Opening (Today)</div>
+                    <div class="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Opening Balance</div>
                     <div class="text-xl font-extrabold text-gray-900">Rs. <?= number_format($totalOpening, 2) ?></div>
+                    <div class="text-xs text-gray-400 mt-2">Selected date: <?= h($currentDate) ?></div>
                 </div>
                 <div class="bg-emerald-50/50 p-4 rounded-2xl border border-emerald-100 shadow-sm hover:shadow-md transition-shadow group">
                     <div class="text-xs font-bold text-emerald-700 uppercase tracking-wider mb-2">Total Received</div>
                     <div class="text-xl font-extrabold text-emerald-600">+Rs. <?= number_format($totalReceived, 2) ?></div>
+                    <div class="text-xs text-emerald-600 mt-2">Selected date, completed only</div>
                 </div>
                 <div class="bg-rose-50/50 p-4 rounded-2xl border border-rose-100 shadow-sm hover:shadow-md transition-shadow group">
                     <div class="text-xs font-bold text-rose-700 uppercase tracking-wider mb-2">Cash Withdrawals</div>
                     <div class="text-xl font-extrabold text-rose-600">-Rs. <?= number_format($totalSent, 2) ?></div>
+                    <div class="text-xs text-rose-600 mt-2">Selected date</div>
                 </div>
                 <div class="bg-white/60 p-4 rounded-2xl border border-white shadow-sm hover:shadow-md transition-shadow group">
                     <div class="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Commission</div>
                     <div class="text-xl font-extrabold text-gray-900">Rs. <?= number_format($totalCommission, 2) ?></div>
+                    <div class="text-xs text-gray-400 mt-2">Selected date</div>
                 </div>
                 <div class="bg-indigo-50/50 p-4 rounded-2xl border border-indigo-100 shadow-sm hover:shadow-md transition-shadow group">
                     <div class="text-xs font-bold text-indigo-700 uppercase tracking-wider mb-2">Account Deduction</div>
                     <div class="text-xl font-extrabold text-indigo-600">Rs. <?= number_format($totalAccountDeduction, 2) ?></div>
+                    <div class="text-xs text-indigo-600 mt-2">Selected date</div>
                 </div>
                 <div class="bg-amber-50/50 p-4 rounded-2xl border border-amber-100 shadow-sm hover:shadow-md transition-shadow group">
                     <div class="text-xs font-bold text-amber-700 uppercase tracking-wider mb-2">Pending Receivables</div>
                     <div class="text-xl font-extrabold text-amber-600"><?= h((string) $totalPendingCount) ?> / Rs. <?= number_format($totalPendingAmount, 2) ?></div>
+                    <div class="text-xs text-amber-600 mt-2">Still pending on selected date view</div>
                 </div>
                 <div class="col-span-2 bg-gradient-to-r from-brand-50 to-blue-50 p-5 rounded-2xl border border-brand-100 shadow-sm relative overflow-hidden group">
                     <div class="absolute right-0 top-0 w-32 h-32 bg-white/40 rounded-full blur-[20px] -z-10 translate-x-1/2 -translate-y-1/2"></div>
@@ -1410,6 +1416,7 @@ $isInternalTransferEdit = $editTxn && (string) ($editTxn['entry_context'] ?? 'ex
                         <div>
                             <div class="text-xs font-bold text-brand-700 uppercase tracking-wider mb-2">Closing Balance</div>
                             <div class="text-3xl font-extrabold text-brand-600 tracking-tight">Rs. <?= number_format($totalClosing, 2) ?></div>
+                            <div class="text-xs text-brand-600 mt-2">Live current balance, pending excluded</div>
                         </div>
                         <div class="p-3 bg-white/60 rounded-xl text-brand-500 shadow-sm">
                             <i data-lucide="calculator" class="w-6 h-6"></i>
@@ -1711,7 +1718,7 @@ $isInternalTransferEdit = $editTxn && (string) ($editTxn['entry_context'] ?? 'ex
     <div class="col-12 col-lg-9">
         <div class="bg-white rounded-2xl border border-gray-200 shadow-sm h-100 flex flex-col">
             <div class="p-4 border-b border-gray-100">
-                <h3 class="h6 fw-bold text-gray-800 mb-0">All Transactions <span class="text-muted fw-normal fs-6">(Today)</span></h3>
+                <h3 class="h6 fw-bold text-gray-800 mb-0">All Transactions <span class="text-muted fw-normal fs-6">(<?= h($currentDate) ?>)</span></h3>
             </div>
             <div class="flex-1 overflow-auto">
                 <table class="table table-borderless table-hover align-middle mb-0 text-sm">

@@ -387,36 +387,42 @@ require_once __DIR__ . '/../includes/sidebar.php';
         <div class="p-3 bg-light rounded-4 border-start border-primary border-4 h-100 transition-all hover-lift">
             <div class="text-muted small fw-medium mb-1 text-uppercase tracking-wider">Opening Cash</div>
             <div class="h4 mb-0 font-bold text-primary"><?= h(number_format($openingCash, 2)) ?></div>
+            <div class="small text-muted mt-1">Selected date: <?= h($date) ?></div>
         </div>
     </div>
     <div class="col-12 col-md-3">
         <div class="p-3 bg-light rounded-4 border-start border-success border-4 h-100 transition-all hover-lift">
             <div class="text-muted small fw-medium mb-1 text-uppercase tracking-wider">Total Cash Received</div>
             <div class="h4 mb-0 font-bold text-success"><?= h(number_format($cashReceivedTotal, 2)) ?></div>
+            <div class="small text-muted mt-1">Selected date, completed cash only</div>
         </div>
     </div>
     <div class="col-12 col-md-3">
         <div class="p-3 bg-light rounded-4 border-start border-danger border-4 h-100 transition-all hover-lift">
             <div class="text-muted small fw-medium mb-1 text-uppercase tracking-wider">Total Cash Sent</div>
             <div class="h4 mb-0 font-bold text-danger"><?= h(number_format($cashSentTotal, 2)) ?></div>
+            <div class="small text-muted mt-1">Selected date</div>
         </div>
     </div>
     <div class="col-12 col-md-3">
         <div class="p-3 bg-light rounded-4 border-start border-success border-4 h-100 transition-all hover-lift">
             <div class="text-muted small fw-medium mb-1 text-uppercase tracking-wider">Commission Income</div>
             <div class="h4 mb-0 font-bold text-success"><?= h(number_format($commissionEarned, 2)) ?></div>
+            <div class="small text-muted mt-1">Selected date</div>
         </div>
     </div>
     <div class="col-12 col-md-3">
         <div class="p-3 bg-gradient-premium rounded-4 border-0 h-100 transition-all hover-lift text-white shadow">
             <div class="text-white-50 small fw-medium mb-1 text-uppercase tracking-wider">Expected Cash (Drawer)</div>
             <div class="h3 mb-0 font-bold"><?= h(number_format($expectedCash, 2)) ?></div>
+            <div class="small text-white-50 mt-1">Selected date drawer balance</div>
         </div>
     </div>
     <div class="col-12 col-md-3">
         <div class="p-3 bg-light rounded-4 border-start border-warning border-4 h-100 transition-all hover-lift">
             <div class="text-muted small fw-medium mb-1 text-uppercase tracking-wider">Pending Bills Amount</div>
             <div class="h4 mb-0 font-bold text-warning"><?= h(number_format((float) ($billPendingOverview['pending_amount'] ?? 0), 2)) ?></div>
+            <div class="small text-muted mt-1">Live current liability</div>
         </div>
     </div>
     <div class="col-12 col-md-3">
@@ -437,18 +443,21 @@ require_once __DIR__ . '/../includes/sidebar.php';
         <div class="p-3 bg-light rounded-4 border-start border-success border-4 h-100 transition-all hover-lift">
             <div class="text-muted small fw-medium mb-1 text-uppercase tracking-wider">Today's Bill Commission</div>
             <div class="h4 mb-0 font-bold text-success"><?= h(number_format((float) ($billTodaySummary['service_charge'] ?? 0), 2)) ?></div>
+            <div class="small text-muted mt-1">Today only</div>
         </div>
     </div>
     <div class="col-12 col-md-3">
         <div class="p-3 bg-light rounded-4 border-start border-primary border-4 h-100 transition-all hover-lift">
             <div class="text-muted small fw-medium mb-1 text-uppercase tracking-wider">Pending Bills Count</div>
             <div class="h4 mb-0 font-bold text-primary"><?= h((string) (int) ($billPendingOverview['pending_count'] ?? 0)) ?></div>
+            <div class="small text-muted mt-1">Live current count</div>
         </div>
     </div>
     <div class="col-12 col-md-3">
         <div class="p-3 bg-light rounded-4 border-start border-secondary border-4 h-100 transition-all hover-lift">
             <div class="text-muted small fw-medium mb-1 text-uppercase tracking-wider">Paid Bills Amount</div>
             <div class="h4 mb-0 font-bold text-secondary"><?= h(number_format($billPaidToday, 2)) ?></div>
+            <div class="small text-muted mt-1">Today only</div>
         </div>
     </div>
 </div>

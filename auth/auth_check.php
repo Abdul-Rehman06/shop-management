@@ -269,6 +269,48 @@ function app_ensure_schema(PDO $pdo): void
     } catch (Throwable $e) {
     }
 
+    try {
+        $pdo->exec("
+            CREATE TABLE IF NOT EXISTS expense_payments (
+                id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+                expense_id BIGINT UNSIGNED NOT NULL,
+                payment_date DATE NOT NULL,
+                total_amount DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+                paid_by VARCHAR(120) NULL,
+                notes VARCHAR(255) NULL,
+                status ENUM('paid','reversed') NOT NULL DEFAULT 'paid',
+                reversed_at DATETIME NULL,
+                reversed_by VARCHAR(120) NULL,
+                created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (id),
+                KEY idx_expense_payments_expense (expense_id),
+                KEY idx_expense_payments_date (payment_date),
+                KEY idx_expense_payments_status (status)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        ");
+    } catch (Throwable $e) {
+    }
+
+    try {
+        $pdo->exec("
+            CREATE TABLE IF NOT EXISTS expense_payment_items (
+                id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+                payment_id BIGINT UNSIGNED NOT NULL,
+                payment_source_type VARCHAR(30) NOT NULL,
+                payment_source_account_id BIGINT UNSIGNED NULL,
+                amount DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+                linked_wallet_txn_id BIGINT UNSIGNED NULL,
+                created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (id),
+                KEY idx_expense_payment_items_payment (payment_id),
+                KEY idx_expense_payment_items_type (payment_source_type),
+                KEY idx_expense_payment_items_account (payment_source_account_id),
+                KEY idx_expense_payment_items_wallet (linked_wallet_txn_id)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        ");
+    } catch (Throwable $e) {
+    }
+
     $expenseColumns = [
         'bill_name' => "ALTER TABLE expenses ADD COLUMN bill_name VARCHAR(150) NOT NULL DEFAULT '' AFTER date",
         'payment_status' => "ALTER TABLE expenses ADD COLUMN payment_status ENUM('paid','unpaid') NOT NULL DEFAULT 'paid' AFTER amount",

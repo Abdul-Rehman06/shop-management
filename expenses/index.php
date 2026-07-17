@@ -107,7 +107,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         $expenseId = (int) ($_POST['expense_id'] ?? 0);
         $targetStatus = trim((string) ($_POST['target_status'] ?? ''));
-        $paymentSourceType = trim((string) ($_POST['payment_source_type'] ?? 'cash'));
         $paymentSourceAccountId = (int) ($_POST['payment_source_account_id'] ?? 0);
         $paymentDate = trim((string) ($_POST['payment_date'] ?? $today));
         $paidBy = trim((string) ($_POST['paid_by'] ?? $adminName));
@@ -124,18 +123,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         try {
             $pdo->beginTransaction();
-            $linkedWalletTxnId = exp_sync_payment_txn($pdo, $expenseRow, [
-                'linked_wallet_txn_id' => (int) ($expenseRow['linked_wallet_txn_id'] ?? 0),
-                'payment_status' => $targetStatus,
-                'payment_source_type' => $targetStatus === 'paid' ? $paymentSourceType : null,
-                'payment_source_account_id' => $targetStatus === 'paid' ? ($paymentSourceType === 'cash' ? exp_account_id_for_method($pdo, 'cash') : ($paymentSourceAccountId > 0 ? $paymentSourceAccountId : null)) : null,
-                'payment_date' => $paymentDate,
-                'bill_name' => (string) ($expenseRow['bill_name'] ?? ''),
-                'category' => (string) ($expenseRow['category'] ?? 'Other'),
-                'amount' => (float) ($expenseRow['amount'] ?? 0),
-                'notes' => (string) ($expenseRow['notes'] ?? ''),
-                'description' => (string) ($expenseRow['description'] ?? ''),
-            ]);
+            $snapshot = [
+                'payment_source_type' => null,
+                'payment_source_account_id' => null,
+                'linked_wallet_txn_id' => null,
+            ];
+            if ($targetStatus === 'paid') {
+                if ($paymentSourceAccountId <= 0) {
+                    throw new RuntimeException('Please select a paid from account.');
+                }
+                $snapshot = exp_apply_payment_history($pdo, $expenseId, [
+                    'bill_name' => (string) ($expenseRow['bill_name'] ?? ''),
+                    'category' => (string) ($expenseRow['category'] ?? 'Other'),
+                    'amount' => (float) ($expenseRow['amount'] ?? 0),
+                    'payment_date' => $paymentDate,
+                    'date' => (string) ($expenseRow['date'] ?? $today),
+                    'paid_by' => $paidBy,
+                    'notes' => (string) ($expenseRow['notes'] ?? ''),
+                    'description' => (string) ($expenseRow['description'] ?? ''),
+                ], [[
+                    'account_id' => $paymentSourceAccountId,
+                    'account_type' => (string) (wallet_account($pdo, $paymentSourceAccountId)['account_type'] ?? ''),
+                    'account_name' => (string) (wallet_account($pdo, $paymentSourceAccountId)['account_name'] ?? ''),
+                    'amount' => (float) ($expenseRow['amount'] ?? 0),
+                ]]);
+            } else {
+                exp_reverse_payment_history($pdo, $expenseId, $paidBy !== '' ? $paidBy : null);
+            }
 
             $stmt = $pdo->prepare("
                 UPDATE expenses
@@ -149,11 +163,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             ");
             $stmt->execute([
                 ':payment_status' => $targetStatus,
-                ':payment_source_type' => $targetStatus === 'paid' ? $paymentSourceType : null,
-                ':payment_source_account_id' => $targetStatus === 'paid' ? ($paymentSourceType === 'cash' ? exp_account_id_for_method($pdo, 'cash') : ($paymentSourceAccountId > 0 ? $paymentSourceAccountId : null)) : null,
+                ':payment_source_type' => $snapshot['payment_source_type'],
+                ':payment_source_account_id' => $snapshot['payment_source_account_id'],
                 ':payment_date' => $targetStatus === 'paid' ? $paymentDate : null,
                 ':paid_by' => $targetStatus === 'paid' ? ($paidBy !== '' ? $paidBy : null) : null,
-                ':linked_wallet_txn_id' => $linkedWalletTxnId,
+                ':linked_wallet_txn_id' => $snapshot['linked_wallet_txn_id'],
                 ':id' => $expenseId,
             ]);
             $pdo->commit();
@@ -194,7 +208,8 @@ $stmt->execute($params);
 $rows = $stmt->fetchAll();
 
 $methodLabels = exp_method_labels();
-$methodAccounts = exp_accounts_by_method($pdo);
+$accountOptions = exp_account_options_by_type($pdo);
+$paymentHistoryMap = exp_payment_history_map($pdo, array_map(static fn (array $row): int => (int) ($row['id'] ?? 0), $rows));
 
 require_once __DIR__ . '/../includes/header.php';
 require_once __DIR__ . '/../includes/sidebar.php';
@@ -380,19 +395,43 @@ require_once __DIR__ . '/../includes/sidebar.php';
                         </td>
                         <td class="px-4 py-3 text-gray-600">
                             <?php if ((string) ($r['payment_status'] ?? 'unpaid') === 'paid'): ?>
-                                <?= h($methodLabels[(string) ($r['payment_source_type'] ?? '')] ?? ucfirst((string) ($r['payment_source_type'] ?? ''))) ?>
-                                <?= ($r['payment_account_name'] ?? '') !== null && (string) ($r['payment_account_name'] ?? '') !== '' ? (' • ' . h((string) ($r['payment_account_name'] ?? ''))) : '' ?>
+                                <?php if ((string) ($r['payment_source_type'] ?? '') === 'multiple'): ?>
+                                    <span class="fw-semibold">Multiple Accounts</span>
+                                <?php else: ?>
+                                    <?= h(exp_payment_source_display((string) ($r['payment_source_type'] ?? ''), (string) ($r['payment_account_name'] ?? ''))) ?>
+                                <?php endif; ?>
                             <?php else: ?>
                                 <span class="text-muted">Not paid yet</span>
                             <?php endif; ?>
                         </td>
                         <td class="px-4 py-3 text-end font-bold text-danger"><?= h(number_format((float) $r['amount'], 2)) ?></td>
                         <td class="px-4 py-3 text-gray-600">
-                            <?php if ((string) ($r['payment_status'] ?? 'unpaid') === 'paid'): ?>
-                                <div><?= h((string) ($r['payment_date'] ?? '')) ?></div>
-                                <div class="small text-muted"><?= h((string) ($r['paid_by'] ?? '')) ?></div>
+                            <?php $historyRows = $paymentHistoryMap[(int) ($r['id'] ?? 0)] ?? []; ?>
+                            <?php if ($historyRows): ?>
+                                <?php foreach ($historyRows as $historyRow): ?>
+                                    <div class="mb-2 pb-2 border-bottom">
+                                        <div class="fw-semibold">
+                                            <?= h((string) ($historyRow['payment_date'] ?? '')) ?>
+                                            <?php if ((string) ($historyRow['status'] ?? '') === 'reversed'): ?>
+                                                <span class="badge bg-warning text-dark ms-1">Reversed</span>
+                                            <?php endif; ?>
+                                        </div>
+                                        <div class="small text-muted">
+                                            Paid By: <?= h((string) ($historyRow['paid_by'] ?? '')) ?> | Rs <?= h(number_format((float) ($historyRow['total_amount'] ?? 0), 2)) ?>
+                                        </div>
+                                        <?php foreach (($historyRow['items'] ?? []) as $historyItem): ?>
+                                            <div class="small text-muted">
+                                                <?= h(exp_payment_source_display((string) ($historyItem['payment_source_type'] ?? ''), (string) ($historyItem['account_name'] ?? ''))) ?>
+                                                - Rs <?= h(number_format((float) ($historyItem['amount'] ?? 0), 2)) ?>
+                                            </div>
+                                        <?php endforeach; ?>
+                                        <?php if ((string) ($historyRow['notes'] ?? '') !== ''): ?>
+                                            <div class="small text-muted"><?= h((string) ($historyRow['notes'] ?? '')) ?></div>
+                                        <?php endif; ?>
+                                    </div>
+                                <?php endforeach; ?>
                             <?php else: ?>
-                                <div class="small text-muted">Unpaid bill</div>
+                                <div class="small text-muted">No payment history</div>
                             <?php endif; ?>
                         </td>
                         <td class="px-4 py-3 text-gray-600">
@@ -408,19 +447,17 @@ require_once __DIR__ . '/../includes/sidebar.php';
                                         <input type="hidden" name="target_status" value="paid">
                                         <input type="hidden" name="payment_date" value="<?= h(date('Y-m-d')) ?>">
                                         <input type="hidden" name="paid_by" value="<?= h($adminName) ?>">
-                                        <select class="form-select form-select-sm expense-toggle-method" name="payment_source_type" style="min-width: 130px;">
-                                            <?php foreach ($methodLabels as $methodKey => $methodLabel): ?>
-                                                <option value="<?= h($methodKey) ?>"><?= h($methodLabel) ?></option>
-                                            <?php endforeach; ?>
-                                        </select>
                                         <select class="form-select form-select-sm expense-toggle-account" name="payment_source_account_id" style="min-width: 150px;">
                                             <option value="0">Select Account</option>
-                                            <?php foreach ($methodAccounts as $methodKey => $accounts): ?>
+                                            <?php foreach ($accountOptions as $accountType => $accounts): ?>
+                                                <?php if (!$accounts) { continue; } ?>
+                                                <optgroup label="<?= h(exp_payment_source_display($accountType)) ?>">
                                                 <?php foreach ($accounts as $account): ?>
-                                                    <option value="<?= (int) ($account['id'] ?? 0) ?>" data-method="<?= h($methodKey) ?>">
+                                                    <option value="<?= (int) ($account['id'] ?? 0) ?>">
                                                         <?= h((string) ($account['account_name'] ?? '')) ?>
                                                     </option>
                                                 <?php endforeach; ?>
+                                                </optgroup>
                                             <?php endforeach; ?>
                                         </select>
                                         <button class="btn btn-success btn-sm">Mark Paid</button>
@@ -459,46 +496,11 @@ require_once __DIR__ . '/../includes/sidebar.php';
 <script>
     const expenseToggleForms = Array.from(document.querySelectorAll('.expense-toggle-paid-form'));
 
-    function syncExpenseToggleAccount(form) {
-        const methodSelect = form.querySelector('.expense-toggle-method');
-        const accountSelect = form.querySelector('.expense-toggle-account');
-        if (!methodSelect || !accountSelect) {
-            return;
-        }
-
-        const method = methodSelect.value || 'cash';
-        let visibleCount = 0;
-        Array.from(accountSelect.options).forEach((option, index) => {
-            if (index === 0) {
-                option.hidden = false;
-                return;
-            }
-            const visible = option.dataset.method === method;
-            option.hidden = !visible;
-            if (visible) {
-                visibleCount++;
-            }
-        });
-
-        const shouldHide = method === 'cash' || method === 'other' || visibleCount === 0;
-        accountSelect.style.display = shouldHide ? 'none' : '';
-        if (shouldHide) {
-            accountSelect.value = '0';
-        } else {
-            const selectedOption = accountSelect.selectedOptions[0] ?? null;
-            if (!selectedOption || selectedOption.hidden) {
-                const firstVisible = Array.from(accountSelect.options).find((option, index) => index > 0 && !option.hidden);
-                accountSelect.value = firstVisible ? firstVisible.value : '0';
-            }
-        }
-    }
-
     expenseToggleForms.forEach((form) => {
-        const methodSelect = form.querySelector('.expense-toggle-method');
-        if (methodSelect) {
-            methodSelect.addEventListener('change', () => syncExpenseToggleAccount(form));
+        const accountSelect = form.querySelector('.expense-toggle-account');
+        if (accountSelect && accountSelect.options.length > 1 && accountSelect.value === '0') {
+            accountSelect.selectedIndex = 1;
         }
-        syncExpenseToggleAccount(form);
     });
 </script>
 

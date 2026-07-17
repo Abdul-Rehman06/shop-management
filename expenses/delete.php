@@ -22,11 +22,11 @@ if (!$row) {
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     try {
         $pdo->beginTransaction();
-        $linkedWalletTxnId = (int) ($row['linked_wallet_txn_id'] ?? 0);
-        if ($linkedWalletTxnId > 0) {
-            $stmt = $pdo->prepare('DELETE FROM wallet_transactions WHERE id = :id');
-            $stmt->execute([':id' => $linkedWalletTxnId]);
-        }
+        exp_reverse_payment_history($pdo, $id);
+        $stmt = $pdo->prepare('DELETE FROM expense_payment_items WHERE payment_id IN (SELECT id FROM expense_payments WHERE expense_id = :expense_id)');
+        $stmt->execute([':expense_id' => $id]);
+        $stmt = $pdo->prepare('DELETE FROM expense_payments WHERE expense_id = :expense_id');
+        $stmt->execute([':expense_id' => $id]);
         $stmt = $pdo->prepare('DELETE FROM expenses WHERE id = :id');
         $stmt->execute([':id' => $id]);
         $pdo->commit();
