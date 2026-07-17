@@ -349,10 +349,10 @@ function wallet_combined_summary(PDO $pdo, ?string $accountType = null, bool $on
     $stmt = $pdo->prepare("
         SELECT
             COALESCE(SUM(CASE WHEN wt.type='opening' THEN wt.amount ELSE 0 END), 0) AS opening_total,
-            COALESCE(SUM(CASE WHEN wt.type='receiving' AND wt.payment_status <> 'cancelled' THEN wt.amount ELSE 0 END), 0) AS receiving_total,
+            COALESCE(SUM(CASE WHEN wt.type='receiving' AND wt.payment_status = 'completed' THEN wt.amount ELSE 0 END), 0) AS receiving_total,
             COALESCE(SUM(CASE WHEN wt.type='sending' AND wt.payment_status = 'completed' THEN wt.amount ELSE 0 END), 0) AS sending_total,
             COALESCE(SUM(CASE WHEN wt.type='sending' AND wt.payment_status = 'completed' THEN wt.account_amount ELSE 0 END), 0) AS account_deduction_total,
-            COALESCE(SUM(CASE WHEN wt.type <> 'opening' AND wt.payment_status <> 'cancelled' AND (wt.type <> 'sending' OR wt.payment_status = 'completed') THEN wt.charges ELSE 0 END), 0) AS charges_total
+            COALESCE(SUM(CASE WHEN wt.type = 'receiving' AND wt.payment_status = 'completed' THEN wt.charges WHEN wt.type='sending' AND wt.payment_status = 'completed' THEN wt.charges ELSE 0 END), 0) AS charges_total
         FROM wallet_transactions wt
         JOIN accounts a ON a.id = wt.account_id
         {$where}
@@ -427,10 +427,10 @@ function wallet_search_totals(PDO $pdo, int $accountId, string $query): array
     $stmt = $pdo->prepare("
         SELECT
             COUNT(*) AS total_rows,
-            COALESCE(SUM(CASE WHEN type='receiving' AND payment_status <> 'cancelled' THEN amount ELSE 0 END), 0) AS receiving_total,
+            COALESCE(SUM(CASE WHEN type='receiving' AND payment_status = 'completed' THEN amount ELSE 0 END), 0) AS receiving_total,
             COALESCE(SUM(CASE WHEN type='sending' AND payment_status = 'completed' THEN amount ELSE 0 END), 0) AS sending_total,
             COALESCE(SUM(CASE WHEN type='sending' AND payment_status = 'completed' THEN account_amount ELSE 0 END), 0) AS account_deduction_total,
-            COALESCE(SUM(CASE WHEN type <> 'opening' AND payment_status <> 'cancelled' AND (type <> 'sending' OR payment_status = 'completed') THEN charges ELSE 0 END), 0) AS commission_total,
+            COALESCE(SUM(CASE WHEN type='receiving' AND payment_status = 'completed' THEN charges WHEN type='sending' AND payment_status = 'completed' THEN charges ELSE 0 END), 0) AS commission_total,
             COALESCE(SUM(CASE WHEN type='receiving' AND payment_status='pending' THEN amount ELSE 0 END), 0) AS pending_amount_total,
             COALESCE(SUM(CASE WHEN type='receiving' AND payment_status='pending' THEN 1 ELSE 0 END), 0) AS pending_rows
         FROM wallet_transactions

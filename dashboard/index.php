@@ -127,10 +127,10 @@ try {
 
         $stmt = $pdo->prepare("
             SELECT
-                COALESCE(SUM(CASE WHEN type = 'receiving' AND payment_status <> 'cancelled' THEN amount ELSE 0 END), 0) AS receiving_total,
+                COALESCE(SUM(CASE WHEN type = 'receiving' AND payment_status = 'completed' THEN amount ELSE 0 END), 0) AS receiving_total,
                 COALESCE(SUM(CASE WHEN type = 'sending' AND payment_status = 'completed' THEN amount ELSE 0 END), 0) AS sending_total,
                 COALESCE(SUM(CASE WHEN type = 'sending' AND payment_status = 'completed' THEN account_amount ELSE 0 END), 0) AS account_deduction_total,
-                COALESCE(SUM(CASE WHEN type <> 'opening' AND payment_status <> 'cancelled' AND (type <> 'sending' OR payment_status = 'completed') THEN charges ELSE 0 END), 0) AS commission_total,
+                COALESCE(SUM(CASE WHEN type = 'receiving' AND payment_status = 'completed' THEN charges WHEN type = 'sending' AND payment_status = 'completed' THEN charges ELSE 0 END), 0) AS commission_total,
                 COALESCE(SUM(CASE WHEN type = 'receiving' AND payment_status = 'pending' THEN 1 ELSE 0 END), 0) AS pending_count,
                 COALESCE(SUM(CASE WHEN type = 'receiving' AND payment_status = 'pending' THEN amount ELSE 0 END), 0) AS pending_amount
             FROM wallet_transactions
@@ -158,7 +158,7 @@ try {
 }
 
 try {
-    $stmt = $pdo->prepare("SELECT COALESCE(SUM(amount), 0) FROM expenses WHERE date >= :from AND date <= :to");
+    $stmt = $pdo->prepare("SELECT COALESCE(SUM(amount), 0) FROM expenses WHERE date >= :from AND date <= :to AND COALESCE(payment_status, 'paid') = 'paid'");
     $stmt->execute([':from' => $fromDate, ':to' => $toDate]);
     $rangeExpense = (float) $stmt->fetchColumn();
 } catch (Throwable $e) {
@@ -284,7 +284,8 @@ if ($canViewProfit && $loadLatestDate !== '') {
 $easypaisaNet = (float) $pdo->query("
     SELECT COALESCE(SUM(
         CASE
-            WHEN wt.type IN ('opening', 'receiving') THEN wt.amount
+            WHEN wt.type = 'opening' THEN wt.amount
+            WHEN wt.type = 'receiving' AND wt.payment_status = 'completed' THEN wt.amount
             WHEN wt.type = 'sending' THEN -wt.account_amount
             ELSE 0
         END
@@ -299,7 +300,8 @@ $easypaisaNet = (float) $pdo->query("
 $jazzcashNet = (float) $pdo->query("
     SELECT COALESCE(SUM(
         CASE
-            WHEN wt.type IN ('opening', 'receiving') THEN wt.amount
+            WHEN wt.type = 'opening' THEN wt.amount
+            WHEN wt.type = 'receiving' AND wt.payment_status = 'completed' THEN wt.amount
             WHEN wt.type = 'sending' THEN -wt.account_amount
             ELSE 0
         END
@@ -314,7 +316,8 @@ $jazzcashNet = (float) $pdo->query("
 $bankNet = (float) $pdo->query("
     SELECT COALESCE(SUM(
         CASE
-            WHEN wt.type IN ('opening', 'receiving') THEN wt.amount
+            WHEN wt.type = 'opening' THEN wt.amount
+            WHEN wt.type = 'receiving' AND wt.payment_status = 'completed' THEN wt.amount
             WHEN wt.type = 'sending' THEN -wt.account_amount
             ELSE 0
         END
@@ -330,6 +333,7 @@ $todayExpense = (float) $pdo->query("
     SELECT COALESCE(SUM(amount), 0)
     FROM expenses
     WHERE date = CURDATE()
+      AND COALESCE(payment_status, 'paid') = 'paid'
 ")->fetchColumn();
 
 $monthlyExpense = (float) $pdo->query("
@@ -337,6 +341,7 @@ $monthlyExpense = (float) $pdo->query("
     FROM expenses
     WHERE date >= DATE_FORMAT(CURDATE(), '%Y-%m-01')
       AND date <= LAST_DAY(CURDATE())
+      AND COALESCE(payment_status, 'paid') = 'paid'
 ")->fetchColumn();
 
 $creditAdvanceTotal = 0.0;
@@ -466,6 +471,7 @@ $cashCommissionToday = 0.0;
 $billPendingCurrent = ['pending_amount' => 0.0, 'pending_count' => 0];
 $billTodaySummary = ['service_charge' => 0.0];
 $billPaidToday = 0.0;
+$pendingReceivablesCurrent = ['pending_amount' => 0.0, 'pending_count' => 0];
 $actualShopCashToday = 0.0;
 try {
     $cashOpeningToday = (float) $pdo->query("
@@ -480,7 +486,7 @@ try {
     $walletCashReceiving = (float) $pdo->query("
         SELECT COALESCE(SUM(
             CASE
-                WHEN wt.payment_status <> 'cancelled' THEN wt.amount
+                WHEN wt.payment_status = 'completed' THEN wt.amount
                 ELSE 0
             END
         ), 0)
@@ -508,7 +514,7 @@ try {
     $cashCommissionToday = (float) $pdo->query("
         SELECT COALESCE(SUM(
             CASE
-                WHEN wt.type = 'receiving' AND wt.payment_status <> 'cancelled' THEN wt.charges
+                WHEN wt.type = 'receiving' AND wt.payment_status = 'completed' THEN wt.charges
                 WHEN wt.type = 'sending' AND wt.payment_status = 'completed' THEN wt.charges
                 ELSE 0
             END
@@ -516,6 +522,18 @@ try {
         FROM wallet_transactions wt
         WHERE wt.date = CURDATE()
     ")->fetchColumn();
+    $pendingReceivablesCurrent = [
+        'pending_amount' => (float) $pdo->query("
+            SELECT COALESCE(SUM(amount), 0)
+            FROM wallet_transactions
+            WHERE type = 'receiving' AND payment_status = 'pending'
+        ")->fetchColumn(),
+        'pending_count' => (int) $pdo->query("
+            SELECT COALESCE(COUNT(*), 0)
+            FROM wallet_transactions
+            WHERE type = 'receiving' AND payment_status = 'pending'
+        ")->fetchColumn(),
+    ];
     $salesCash = (float) $pdo->query("
         SELECT COALESCE(SUM(quantity * sale_price), 0)
         FROM sales
@@ -816,7 +834,7 @@ $extraHead = '<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/char
                         <div class="w-8 h-8 rounded-full bg-amber-100 text-amber-600 flex items-center justify-center group-hover:scale-110 transition-transform">
                             <i data-lucide="hourglass" class="w-4 h-4"></i>
                         </div>
-                        <div class="text-sm font-semibold text-gray-500 uppercase tracking-wider">Pending Payments</div>
+                        <div class="text-sm font-semibold text-gray-500 uppercase tracking-wider">Pending Receivables</div>
                     </div>
                     <div class="text-2xl font-bold text-gray-900"><?= h((string) $rangePendingPayments) ?></div>
                     <div class="text-sm text-gray-500 mt-1">Rs <?= money($rangePendingAmount) ?></div>
@@ -886,6 +904,7 @@ $extraHead = '<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/char
                 <div class="p-2.5 bg-brand-100 text-brand-600 rounded-xl group-hover:bg-brand-200 transition-colors"><i data-lucide="wallet" class="w-5 h-5"></i></div>
             </div>
             <div class="text-3xl font-extrabold text-gray-900 tracking-tight text-transparent bg-clip-text bg-gradient-premium">Rs <?= money((float) ($walletAll['closing'] ?? 0)) ?></div>
+            <div class="text-xs text-gray-400 mt-2">Live current balance, pending excluded</div>
         </div>
     </div>
 </div>
@@ -905,6 +924,7 @@ $extraHead = '<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/char
                 <div class="p-2.5 bg-blue-100 text-blue-600 rounded-xl group-hover:bg-blue-200 transition-colors"><i data-lucide="smartphone" class="w-5 h-5"></i></div>
             </div>
             <div class="text-3xl font-extrabold text-gray-900 tracking-tight">Rs <?= money($loadTotalBalance) ?></div>
+            <div class="text-xs text-gray-400 mt-2">Current load balance</div>
         </div>
     </div>
 
@@ -918,6 +938,7 @@ $extraHead = '<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/char
                     <div class="p-2.5 bg-green-100 text-green-600 rounded-xl group-hover:bg-green-200 transition-colors"><i data-lucide="trending-up" class="w-5 h-5"></i></div>
                 </div>
                 <div class="text-3xl font-extrabold text-gray-900 tracking-tight">Rs <?= money($loadTotalProfit) ?></div>
+                <div class="text-xs text-gray-400 mt-2">Latest load closing date</div>
             </div>
         </div>
     <?php endif; ?>
@@ -931,6 +952,7 @@ $extraHead = '<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/char
                 <div class="p-2.5 bg-red-100 text-red-600 rounded-xl group-hover:bg-red-200 transition-colors"><i data-lucide="signal" class="w-5 h-5"></i></div>
             </div>
             <div class="text-3xl font-extrabold text-gray-900 tracking-tight">Rs <?= money($loadBalances['Jazz'] ?? 0) ?></div>
+            <div class="text-xs text-gray-400 mt-2">Current network balance</div>
         </div>
     </div>
 
@@ -943,6 +965,7 @@ $extraHead = '<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/char
                 <div class="p-2.5 bg-green-100 text-green-600 rounded-xl group-hover:bg-green-200 transition-colors"><i data-lucide="radio-tower" class="w-5 h-5"></i></div>
             </div>
             <div class="text-3xl font-extrabold text-gray-900 tracking-tight">Rs <?= money($loadBalances['Zong'] ?? 0) ?></div>
+            <div class="text-xs text-gray-400 mt-2">Current network balance</div>
         </div>
     </div>
 
@@ -955,6 +978,7 @@ $extraHead = '<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/char
                 <div class="p-2.5 bg-orange-100 text-orange-500 rounded-xl group-hover:bg-orange-200 transition-colors"><i data-lucide="wifi" class="w-5 h-5"></i></div>
             </div>
             <div class="text-3xl font-extrabold text-gray-900 tracking-tight">Rs <?= money($loadBalances['Ufone'] ?? 0) ?></div>
+            <div class="text-xs text-gray-400 mt-2">Current network balance</div>
         </div>
     </div>
 
@@ -967,6 +991,7 @@ $extraHead = '<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/char
                 <div class="p-2.5 bg-cyan-100 text-cyan-600 rounded-xl group-hover:bg-cyan-200 transition-colors"><i data-lucide="rss" class="w-5 h-5"></i></div>
             </div>
             <div class="text-3xl font-extrabold text-gray-900 tracking-tight">Rs <?= money($loadBalances['Telenor'] ?? 0) ?></div>
+            <div class="text-xs text-gray-400 mt-2">Current network balance</div>
         </div>
     </div>
 
@@ -975,10 +1000,11 @@ $extraHead = '<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/char
         <div class="absolute -right-6 -top-6 w-32 h-32 bg-emerald-50 rounded-full group-hover:scale-150 transition-transform duration-700 ease-out z-0 opacity-50"></div>
         <div class="relative z-10">
             <div class="flex items-center justify-between mb-6">
-                <div class="text-xs font-bold text-gray-500 uppercase tracking-widest">EasyPaisa</div>
+                <div class="text-xs font-bold text-gray-500 uppercase tracking-widest">EasyPaisa Balance</div>
                 <div class="p-2.5 bg-emerald-100 text-emerald-600 rounded-xl group-hover:bg-emerald-200 transition-colors"><i data-lucide="wallet" class="w-5 h-5"></i></div>
             </div>
             <div class="text-3xl font-extrabold text-gray-900 tracking-tight">Rs <?= money($easypaisaNet) ?></div>
+            <div class="text-xs text-gray-400 mt-2">Live current balance</div>
         </div>
     </div>
 
@@ -987,10 +1013,11 @@ $extraHead = '<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/char
         <div class="absolute -right-6 -top-6 w-32 h-32 bg-rose-50 rounded-full group-hover:scale-150 transition-transform duration-700 ease-out z-0 opacity-50"></div>
         <div class="relative z-10">
             <div class="flex items-center justify-between mb-6">
-                <div class="text-xs font-bold text-gray-500 uppercase tracking-widest">JazzCash</div>
+                <div class="text-xs font-bold text-gray-500 uppercase tracking-widest">JazzCash Balance</div>
                 <div class="p-2.5 bg-rose-100 text-rose-600 rounded-xl group-hover:bg-rose-200 transition-colors"><i data-lucide="circle-dollar-sign" class="w-5 h-5"></i></div>
             </div>
             <div class="text-3xl font-extrabold text-gray-900 tracking-tight">Rs <?= money($jazzcashNet) ?></div>
+            <div class="text-xs text-gray-400 mt-2">Live current balance</div>
         </div>
     </div>
 
@@ -1003,6 +1030,7 @@ $extraHead = '<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/char
                 <div class="p-2.5 bg-indigo-100 text-indigo-600 rounded-xl group-hover:bg-indigo-200 transition-colors"><i data-lucide="building-2" class="w-5 h-5"></i></div>
             </div>
             <div class="text-3xl font-extrabold text-gray-900 tracking-tight">Rs <?= money($bankNet) ?></div>
+            <div class="text-xs text-gray-400 mt-2">Live current balance</div>
         </div>
     </div>
 
@@ -1015,6 +1043,7 @@ $extraHead = '<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/char
                 <div class="p-2.5 bg-red-100 text-red-600 rounded-xl group-hover:bg-red-200 transition-colors"><i data-lucide="trending-down" class="w-5 h-5"></i></div>
             </div>
             <div class="text-3xl font-extrabold text-danger tracking-tight">Rs <?= money($todayExpense) ?></div>
+            <div class="text-xs text-gray-400 mt-2">Today only, paid bills only</div>
         </div>
     </div>
 
@@ -1027,6 +1056,7 @@ $extraHead = '<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/char
                 <div class="p-2.5 bg-red-100 text-red-600 rounded-xl group-hover:bg-red-200 transition-colors"><i data-lucide="calendar-x" class="w-5 h-5"></i></div>
             </div>
             <div class="text-3xl font-extrabold text-danger tracking-tight">Rs <?= money($monthlyExpense) ?></div>
+            <div class="text-xs text-gray-400 mt-2">Current month, paid bills only</div>
         </div>
     </div>
 
@@ -1040,6 +1070,7 @@ $extraHead = '<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/char
                     <div class="p-2.5 bg-green-100 text-green-600 rounded-xl group-hover:bg-green-200 transition-colors"><i data-lucide="trending-up" class="w-5 h-5"></i></div>
                 </div>
                 <div class="text-3xl font-extrabold text-success tracking-tight">Rs <?= money($todayProfit) ?></div>
+                <div class="text-xs text-gray-400 mt-2">Today only</div>
             </div>
         </div>
 
@@ -1051,6 +1082,7 @@ $extraHead = '<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/char
                     <div class="p-2.5 bg-green-100 text-green-600 rounded-xl group-hover:bg-green-200 transition-colors"><i data-lucide="calendar-check" class="w-5 h-5"></i></div>
                 </div>
                 <div class="text-3xl font-extrabold text-success tracking-tight">Rs <?= money($monthlyProfit) ?></div>
+                <div class="text-xs text-gray-400 mt-2">Current month</div>
             </div>
         </div>
     <?php endif; ?>
@@ -1230,6 +1262,17 @@ $extraHead = '<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/char
                 <div class="text-sm font-medium text-gray-500 mt-2 bg-gray-50 px-3 py-1.5 rounded-lg inline-block border border-gray-100"><?= h((string) (int) ($billPendingCurrent['pending_count'] ?? 0)) ?> bills pending</div>
             </div>
         </div>
+        <a class="glass-card rounded-3xl p-6 relative overflow-hidden group no-underline" href="<?= h(app_url('mobile-accounts/index.php?search=1&search_status=pending')) ?>">
+            <div class="absolute -right-6 -top-6 w-32 h-32 bg-amber-50 rounded-full group-hover:scale-150 transition-transform duration-700 ease-out z-0 opacity-50"></div>
+            <div class="relative z-10">
+                <div class="flex items-center justify-between mb-6">
+                    <div class="text-xs font-bold text-gray-500 uppercase tracking-widest">Pending Receivables</div>
+                    <div class="p-2.5 bg-amber-100 text-amber-700 rounded-xl"><i data-lucide="hourglass" class="w-5 h-5"></i></div>
+                </div>
+                <div class="text-3xl font-extrabold text-gray-900 tracking-tight">Rs <?= money((float) ($pendingReceivablesCurrent['pending_amount'] ?? 0)) ?></div>
+                <div class="text-sm font-medium text-gray-500 mt-2 bg-gray-50 px-3 py-1.5 rounded-lg inline-block border border-gray-100"><?= h((string) (int) ($pendingReceivablesCurrent['pending_count'] ?? 0)) ?> still pending</div>
+            </div>
+        </a>
         <div class="glass-card rounded-3xl p-6 relative overflow-hidden group">
             <div class="absolute -right-6 -top-6 w-32 h-32 bg-cyan-50 rounded-full group-hover:scale-150 transition-transform duration-700 ease-out z-0 opacity-50"></div>
             <div class="relative z-10">
@@ -1238,7 +1281,7 @@ $extraHead = '<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/char
                     <div class="p-2.5 bg-cyan-100 text-cyan-700 rounded-xl"><i data-lucide="safe" class="w-5 h-5"></i></div>
                 </div>
                 <div class="text-3xl font-extrabold text-gray-900 tracking-tight">Rs <?= money($actualShopCashToday) ?></div>
-                <div class="text-sm font-medium text-gray-500 mt-2 bg-gray-50 px-3 py-1.5 rounded-lg inline-block border border-gray-100">Cash drawer - pending bills</div>
+                <div class="text-sm font-medium text-gray-500 mt-2 bg-gray-50 px-3 py-1.5 rounded-lg inline-block border border-gray-100">Today drawer cash - pending bills</div>
             </div>
         </div>
         <div class="glass-card rounded-3xl p-6 relative overflow-hidden group">

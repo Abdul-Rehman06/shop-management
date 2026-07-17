@@ -8,7 +8,7 @@ require_once __DIR__ . '/exp_lib.php';
 $pageTitle = 'Expense Reports - Shop Management';
 
 $pdo = db();
-$categories = exp_categories();
+$categories = exp_categories($pdo);
 
 $preset = trim((string) ($_GET['preset'] ?? ''));
 
@@ -48,7 +48,7 @@ if ($category !== '') {
 }
 
 $stmt = $pdo->prepare("
-    SELECT id, date, category, amount, description
+    SELECT id, date, bill_name, category, amount, payment_status, payment_source_type, payment_date, paid_by, notes, description
     FROM expenses
     {$where}
     ORDER BY date ASC, id ASC
@@ -56,7 +56,9 @@ $stmt = $pdo->prepare("
 $stmt->execute($params);
 $rows = $stmt->fetchAll();
 
-$total = exp_total($pdo, $from, $to, $category);
+$summary = exp_summary($pdo, $from, $to, $category);
+$categorySummary = exp_category_summary($pdo, $from, $to);
+$methodLabels = exp_method_labels();
 
 require_once __DIR__ . '/../includes/header.php';
 require_once __DIR__ . '/../includes/sidebar.php';
@@ -104,8 +106,56 @@ require_once __DIR__ . '/../includes/sidebar.php';
         <div class="card border-0 shadow-sm">
             <div class="card-body">
                 <div class="text-muted small">Total Expense</div>
-                <div class="h5 mb-0"><?= h(number_format($total, 2)) ?></div>
+                <div class="h5 mb-0"><?= h(number_format((float) ($summary['total_amount'] ?? 0), 2)) ?></div>
             </div>
+        </div>
+    </div>
+    <div class="col-12 col-md-4">
+        <div class="card border-0 shadow-sm">
+            <div class="card-body">
+                <div class="text-muted small">Paid Bills</div>
+                <div class="h5 mb-0"><?= h((string) ($summary['paid_count'] ?? 0)) ?> / Rs <?= h(number_format((float) ($summary['paid_amount'] ?? 0), 2)) ?></div>
+            </div>
+        </div>
+    </div>
+    <div class="col-12 col-md-4">
+        <div class="card border-0 shadow-sm">
+            <div class="card-body">
+                <div class="text-muted small">Unpaid Bills</div>
+                <div class="h5 mb-0"><?= h((string) ($summary['unpaid_count'] ?? 0)) ?> / Rs <?= h(number_format((float) ($summary['unpaid_amount'] ?? 0), 2)) ?></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card border-0 shadow-sm mb-3">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-striped table-hover align-middle mb-0">
+                <thead class="table-light">
+                <tr>
+                    <th>Category</th>
+                    <th class="text-end">Total</th>
+                    <th class="text-end">Paid</th>
+                    <th class="text-end">Unpaid</th>
+                    <th class="text-end">Bills</th>
+                </tr>
+                </thead>
+                <tbody>
+                <?php foreach ($categorySummary as $sum): ?>
+                    <tr>
+                        <td><?= h((string) ($sum['category'] ?? '')) ?></td>
+                        <td class="text-end"><?= h(number_format((float) ($sum['total_amount'] ?? 0), 2)) ?></td>
+                        <td class="text-end"><?= h(number_format((float) ($sum['paid_amount'] ?? 0), 2)) ?></td>
+                        <td class="text-end"><?= h(number_format((float) ($sum['unpaid_amount'] ?? 0), 2)) ?></td>
+                        <td class="text-end"><?= h((string) (int) ($sum['total_rows'] ?? 0)) ?></td>
+                    </tr>
+                <?php endforeach; ?>
+                <?php if (!$categorySummary): ?>
+                    <tr><td colspan="5" class="text-center text-muted py-3">No category summary available.</td></tr>
+                <?php endif; ?>
+                </tbody>
+            </table>
         </div>
     </div>
 </div>
@@ -117,23 +167,33 @@ require_once __DIR__ . '/../includes/sidebar.php';
                 <thead class="table-light">
                 <tr>
                     <th>Date</th>
+                    <th>Bill Name</th>
                     <th>Category</th>
+                    <th>Status</th>
+                    <th>Paid From</th>
                     <th class="text-end">Amount</th>
-                    <th>Description</th>
+                    <th>Payment Date</th>
+                    <th>Paid By</th>
+                    <th>Notes</th>
                 </tr>
                 </thead>
                 <tbody>
                 <?php foreach ($rows as $r): ?>
                     <tr>
                         <td><?= h((string) $r['date']) ?></td>
+                        <td><?= h((string) ($r['bill_name'] ?? '')) ?></td>
                         <td><?= h((string) $r['category']) ?></td>
+                        <td><?= h(exp_status_label((string) ($r['payment_status'] ?? 'unpaid'))) ?></td>
+                        <td><?= h($methodLabels[(string) ($r['payment_source_type'] ?? '')] ?? ucfirst((string) ($r['payment_source_type'] ?? ''))) ?></td>
                         <td class="text-end"><?= h(number_format((float) $r['amount'], 2)) ?></td>
-                        <td><?= h((string) ($r['description'] ?? '')) ?></td>
+                        <td><?= h((string) ($r['payment_date'] ?? '')) ?></td>
+                        <td><?= h((string) ($r['paid_by'] ?? '')) ?></td>
+                        <td><?= h((string) ($r['notes'] ?? ($r['description'] ?? ''))) ?></td>
                     </tr>
                 <?php endforeach; ?>
                 <?php if (!$rows): ?>
                     <tr>
-                        <td colspan="4" class="text-center text-muted py-4">No data found for selected filters.</td>
+                        <td colspan="9" class="text-center text-muted py-4">No data found for selected filters.</td>
                     </tr>
                 <?php endif; ?>
                 </tbody>

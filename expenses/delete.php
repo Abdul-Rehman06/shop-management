@@ -20,9 +20,23 @@ if (!$row) {
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $stmt = $pdo->prepare('DELETE FROM expenses WHERE id = :id');
-    $stmt->execute([':id' => $id]);
-    flash_set('success', 'Expense deleted successfully.');
+    try {
+        $pdo->beginTransaction();
+        $linkedWalletTxnId = (int) ($row['linked_wallet_txn_id'] ?? 0);
+        if ($linkedWalletTxnId > 0) {
+            $stmt = $pdo->prepare('DELETE FROM wallet_transactions WHERE id = :id');
+            $stmt->execute([':id' => $linkedWalletTxnId]);
+        }
+        $stmt = $pdo->prepare('DELETE FROM expenses WHERE id = :id');
+        $stmt->execute([':id' => $id]);
+        $pdo->commit();
+        flash_set('success', 'Expense deleted successfully.');
+    } catch (Throwable $e) {
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+        flash_set('error', 'Could not delete expense bill.');
+    }
     app_redirect('expenses/index.php');
 }
 
@@ -46,9 +60,14 @@ require_once __DIR__ . '/../includes/sidebar.php';
     <div class="card-body">
         <div class="row g-2">
             <div class="col-12 col-md-3"><span class="text-muted">Date:</span> <?= h((string) $row['date']) ?></div>
+            <div class="col-12 col-md-3"><span class="text-muted">Bill Name:</span> <?= h((string) ($row['bill_name'] ?? '')) ?></div>
             <div class="col-12 col-md-3"><span class="text-muted">Category:</span> <?= h((string) $row['category']) ?></div>
             <div class="col-12 col-md-3"><span class="text-muted">Amount:</span> <?= h(number_format((float) $row['amount'], 2)) ?></div>
-            <div class="col-12 col-md-3"><span class="text-muted">Description:</span> <?= h((string) ($row['description'] ?? '')) ?></div>
+            <div class="col-12 col-md-3"><span class="text-muted">Status:</span> <?= h(exp_status_label((string) ($row['payment_status'] ?? 'unpaid'))) ?></div>
+            <div class="col-12 col-md-3"><span class="text-muted">Payment Date:</span> <?= h((string) ($row['payment_date'] ?? '')) ?></div>
+            <div class="col-12 col-md-3"><span class="text-muted">Paid By:</span> <?= h((string) ($row['paid_by'] ?? '')) ?></div>
+            <div class="col-12 col-md-3"><span class="text-muted">Notes:</span> <?= h((string) ($row['notes'] ?? '')) ?></div>
+            <div class="col-12 col-md-6"><span class="text-muted">Description:</span> <?= h((string) ($row['description'] ?? '')) ?></div>
         </div>
     </div>
 </div>

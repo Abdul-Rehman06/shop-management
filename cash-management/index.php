@@ -38,7 +38,7 @@ function cash_sum_wallet(PDO $pdo, string $date, string $type): float
         SELECT COALESCE(SUM(
             CASE
                 WHEN wt.type = 'opening' THEN wt.amount
-                WHEN wt.type = 'receiving' AND wt.payment_status <> 'cancelled' THEN wt.amount
+                WHEN wt.type = 'receiving' AND wt.payment_status = 'completed' THEN wt.amount
                 WHEN wt.type = 'sending' AND wt.payment_status = 'completed' THEN wt.amount
                 ELSE 0
             END
@@ -121,7 +121,7 @@ function credit_advance_total(PDO $pdo, string $date): float
 
 function expenses_total(PDO $pdo, string $date): float
 {
-    $stmt = $pdo->prepare("SELECT COALESCE(SUM(amount), 0) FROM expenses WHERE date = :d");
+    $stmt = $pdo->prepare("SELECT COALESCE(SUM(amount), 0) FROM expenses WHERE date = :d AND COALESCE(payment_status, 'paid') = 'paid'");
     $stmt->execute([':d' => $date]);
     return (float) $stmt->fetchColumn();
 }
@@ -148,7 +148,7 @@ function non_cash_wallet_sum(PDO $pdo, string $date, string $type): float
     $stmt = $pdo->prepare("
         SELECT COALESCE(SUM(
             CASE
-                WHEN wt.type = 'receiving' AND wt.payment_status <> 'cancelled' THEN wt.amount
+                WHEN wt.type = 'receiving' AND wt.payment_status = 'completed' THEN wt.amount
                 WHEN wt.type = 'sending' AND wt.payment_status = 'completed' THEN wt.amount
                 ELSE 0
             END
@@ -172,7 +172,7 @@ function wallet_commission_total(PDO $pdo, string $date): float
         SELECT COALESCE(SUM(
             CASE
                 WHEN wt.type = 'opening' THEN 0
-                WHEN wt.type = 'receiving' AND wt.payment_status <> 'cancelled' THEN wt.charges
+                WHEN wt.type = 'receiving' AND wt.payment_status = 'completed' THEN wt.charges
                 WHEN wt.type = 'sending' AND wt.payment_status = 'completed' THEN wt.charges
                 ELSE 0
             END
@@ -205,6 +205,18 @@ $expectedCash = $openingCash + $cashReceivedTotal - $cashSentTotal;
 $billPendingOverview = bill_current_overview($pdo);
 $billTodaySummary = bill_summary($pdo, ['from' => $date, 'to' => $date]);
 $billPaidToday = bill_paid_amount_by_date($pdo, $date, $date);
+$pendingReceivables = [
+    'pending_amount' => (float) $pdo->query("
+        SELECT COALESCE(SUM(amount), 0)
+        FROM wallet_transactions
+        WHERE type = 'receiving' AND payment_status = 'pending'
+    ")->fetchColumn(),
+    'pending_count' => (int) $pdo->query("
+        SELECT COALESCE(COUNT(*), 0)
+        FROM wallet_transactions
+        WHERE type = 'receiving' AND payment_status = 'pending'
+    ")->fetchColumn(),
+];
 $actualShopCash = $expectedCash - (float) ($billPendingOverview['pending_amount'] ?? 0);
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -408,9 +420,17 @@ require_once __DIR__ . '/../includes/sidebar.php';
         </div>
     </div>
     <div class="col-12 col-md-3">
+        <a class="p-3 bg-light rounded-4 border-start border-amber-400 border-4 h-100 transition-all hover-lift d-block text-decoration-none" href="<?= h(app_url('mobile-accounts/index.php?search=1&search_status=pending')) ?>">
+            <div class="text-muted small fw-medium mb-1 text-uppercase tracking-wider">Pending Receivables</div>
+            <div class="h4 mb-0 font-bold text-amber-700"><?= h(number_format((float) ($pendingReceivables['pending_amount'] ?? 0), 2)) ?></div>
+            <div class="small text-muted mt-1"><?= h((string) (int) ($pendingReceivables['pending_count'] ?? 0)) ?> pending</div>
+        </a>
+    </div>
+    <div class="col-12 col-md-3">
         <div class="p-3 bg-light rounded-4 border-start border-info border-4 h-100 transition-all hover-lift">
             <div class="text-muted small fw-medium mb-1 text-uppercase tracking-wider">Actual Shop Cash</div>
             <div class="h4 mb-0 font-bold text-info"><?= h(number_format($actualShopCash, 2)) ?></div>
+            <div class="small text-muted mt-1">Cash in hand, pending excluded</div>
         </div>
     </div>
     <div class="col-12 col-md-3">
@@ -494,6 +514,10 @@ require_once __DIR__ . '/../includes/sidebar.php';
                         <tr class="transition-all hover-bg-light">
                             <td class="px-3 py-3 border-0 border-bottom text-gray-700">Pending Bills (Liability)</td>
                             <td class="px-3 py-3 border-0 border-bottom text-end font-medium text-warning">- <?= h(number_format((float) ($billPendingOverview['pending_amount'] ?? 0), 2)) ?></td>
+                        </tr>
+                        <tr class="transition-all hover-bg-light">
+                            <td class="px-3 py-3 border-0 border-bottom text-gray-700">Pending Receivables</td>
+                            <td class="px-3 py-3 border-0 border-bottom text-end font-medium text-amber-700"><?= h(number_format((float) ($pendingReceivables['pending_amount'] ?? 0), 2)) ?></td>
                         </tr>
                         <tr class="transition-all hover-bg-light">
                             <td class="px-3 py-3 border-0 border-bottom text-gray-700">Actual Shop Cash</td>

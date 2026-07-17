@@ -221,6 +221,125 @@ function app_ensure_schema(PDO $pdo): void
 
     try {
         $pdo->exec("
+            CREATE TABLE IF NOT EXISTS expense_categories (
+                id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+                category_name VARCHAR(100) NOT NULL,
+                is_active TINYINT(1) NOT NULL DEFAULT 1,
+                sort_order INT NOT NULL DEFAULT 0,
+                created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                PRIMARY KEY (id),
+                UNIQUE KEY uq_expense_categories_name (category_name),
+                KEY idx_expense_categories_active (is_active),
+                KEY idx_expense_categories_sort (sort_order)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        ");
+    } catch (Throwable $e) {
+    }
+
+    try {
+        $pdo->exec("
+            CREATE TABLE IF NOT EXISTS expenses (
+                id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+                date DATE NOT NULL,
+                bill_name VARCHAR(150) NOT NULL DEFAULT '',
+                category VARCHAR(100) NOT NULL,
+                amount DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+                payment_status ENUM('paid','unpaid') NOT NULL DEFAULT 'paid',
+                payment_source_type VARCHAR(30) NULL,
+                payment_source_account_id BIGINT UNSIGNED NULL,
+                payment_date DATE NULL,
+                paid_by VARCHAR(120) NULL,
+                notes VARCHAR(255) NULL,
+                description VARCHAR(255) NULL,
+                linked_wallet_txn_id BIGINT UNSIGNED NULL,
+                created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                PRIMARY KEY (id),
+                KEY idx_expenses_date (date),
+                KEY idx_expenses_category (category),
+                KEY idx_expenses_bill_name (bill_name),
+                KEY idx_expenses_status (payment_status),
+                KEY idx_expenses_payment_date (payment_date),
+                KEY idx_expenses_payment_source_type (payment_source_type),
+                KEY idx_expenses_payment_source_account (payment_source_account_id),
+                KEY idx_expenses_linked_wallet_txn (linked_wallet_txn_id)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        ");
+    } catch (Throwable $e) {
+    }
+
+    $expenseColumns = [
+        'bill_name' => "ALTER TABLE expenses ADD COLUMN bill_name VARCHAR(150) NOT NULL DEFAULT '' AFTER date",
+        'payment_status' => "ALTER TABLE expenses ADD COLUMN payment_status ENUM('paid','unpaid') NOT NULL DEFAULT 'paid' AFTER amount",
+        'payment_source_type' => "ALTER TABLE expenses ADD COLUMN payment_source_type VARCHAR(30) NULL AFTER payment_status",
+        'payment_source_account_id' => "ALTER TABLE expenses ADD COLUMN payment_source_account_id BIGINT UNSIGNED NULL AFTER payment_source_type",
+        'payment_date' => "ALTER TABLE expenses ADD COLUMN payment_date DATE NULL AFTER payment_source_account_id",
+        'paid_by' => "ALTER TABLE expenses ADD COLUMN paid_by VARCHAR(120) NULL AFTER payment_date",
+        'notes' => "ALTER TABLE expenses ADD COLUMN notes VARCHAR(255) NULL AFTER paid_by",
+        'linked_wallet_txn_id' => "ALTER TABLE expenses ADD COLUMN linked_wallet_txn_id BIGINT UNSIGNED NULL AFTER description",
+        'updated_at' => "ALTER TABLE expenses ADD COLUMN updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP AFTER created_at",
+    ];
+    foreach ($expenseColumns as $column => $sql) {
+        try {
+            $stmt = $pdo->query("SHOW COLUMNS FROM expenses LIKE " . $pdo->quote($column));
+            if (!(bool) $stmt->fetchColumn()) {
+                $pdo->exec($sql);
+            }
+        } catch (Throwable $e) {
+        }
+    }
+
+    try {
+        $pdo->exec("UPDATE expenses SET bill_name = COALESCE(NULLIF(description, ''), category) WHERE COALESCE(bill_name, '') = ''");
+        $pdo->exec("UPDATE expenses SET payment_status = 'paid' WHERE payment_status IS NULL");
+        $pdo->exec("UPDATE expenses SET payment_date = date WHERE payment_status = 'paid' AND payment_date IS NULL");
+    } catch (Throwable $e) {
+    }
+
+    $expenseIndexes = [
+        "ALTER TABLE expenses ADD KEY idx_expenses_bill_name (bill_name)",
+        "ALTER TABLE expenses ADD KEY idx_expenses_status (payment_status)",
+        "ALTER TABLE expenses ADD KEY idx_expenses_payment_date (payment_date)",
+        "ALTER TABLE expenses ADD KEY idx_expenses_payment_source_type (payment_source_type)",
+        "ALTER TABLE expenses ADD KEY idx_expenses_payment_source_account (payment_source_account_id)",
+        "ALTER TABLE expenses ADD KEY idx_expenses_linked_wallet_txn (linked_wallet_txn_id)",
+    ];
+    foreach ($expenseIndexes as $sql) {
+        try {
+            $pdo->exec($sql);
+        } catch (Throwable $e) {
+        }
+    }
+
+    foreach ([
+        'Shop Rent',
+        'Electricity',
+        'Internet',
+        'Staff Salary',
+        'Water Bill',
+        'Gas Bill',
+        'Maintenance',
+        'Other',
+    ] as $index => $categoryName) {
+        try {
+            $stmt = $pdo->prepare("
+                INSERT INTO expense_categories (category_name, is_active, sort_order)
+                VALUES (:category_name, 1, :sort_order)
+                ON DUPLICATE KEY UPDATE
+                    is_active = 1,
+                    sort_order = VALUES(sort_order)
+            ");
+            $stmt->execute([
+                ':category_name' => $categoryName,
+                ':sort_order' => $index + 1,
+            ]);
+        } catch (Throwable $e) {
+        }
+    }
+
+    try {
+        $pdo->exec("
             CREATE TABLE IF NOT EXISTS credit_customers (
                 id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
                 name VARCHAR(120) NOT NULL,

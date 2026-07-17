@@ -39,7 +39,7 @@ $wallet_compute_auto_opening = function (PDO $pdo, int $accountId, string $date)
         $stmt = $pdo->prepare("
             SELECT COALESCE(SUM(
                 CASE
-                    WHEN type = 'receiving' AND payment_status <> 'cancelled' THEN amount
+                    WHEN type = 'receiving' AND payment_status = 'completed' THEN amount
                     WHEN type = 'sending' AND payment_status = 'completed' THEN -account_amount
                     ELSE 0
                 END
@@ -58,7 +58,7 @@ $wallet_compute_auto_opening = function (PDO $pdo, int $accountId, string $date)
     $stmt = $pdo->prepare("
         SELECT COALESCE(SUM(
             CASE
-                WHEN type = 'receiving' AND payment_status <> 'cancelled' THEN amount
+                WHEN type = 'receiving' AND payment_status = 'completed' THEN amount
                 WHEN type = 'sending' AND payment_status = 'completed' THEN -account_amount
                 ELSE 0
             END
@@ -572,7 +572,7 @@ function get_daily_stats(PDO $pdo, int $accountId, string $date): array {
             $stmt = $pdo->prepare("
                 SELECT COALESCE(SUM(
                     CASE
-                        WHEN type = 'receiving' AND payment_status <> 'cancelled' THEN amount
+                        WHEN type = 'receiving' AND payment_status = 'completed' THEN amount
                         WHEN type = 'sending' AND payment_status = 'completed' THEN -account_amount
                         ELSE 0
                     END
@@ -590,7 +590,7 @@ function get_daily_stats(PDO $pdo, int $accountId, string $date): array {
             $stmt = $pdo->prepare("
                 SELECT COALESCE(SUM(
                     CASE
-                        WHEN type = 'receiving' AND payment_status <> 'cancelled' THEN amount
+                        WHEN type = 'receiving' AND payment_status = 'completed' THEN amount
                         WHEN type = 'sending' AND payment_status = 'completed' THEN -account_amount
                         ELSE 0
                     END
@@ -607,10 +607,10 @@ function get_daily_stats(PDO $pdo, int $accountId, string $date): array {
 
     $stmt = $pdo->prepare("
         SELECT
-            COALESCE(SUM(CASE WHEN type = 'receiving' AND payment_status <> 'cancelled' THEN amount ELSE 0 END), 0) AS received,
+            COALESCE(SUM(CASE WHEN type = 'receiving' AND payment_status = 'completed' THEN amount ELSE 0 END), 0) AS received,
             COALESCE(SUM(CASE WHEN type = 'sending' AND payment_status = 'completed' THEN amount ELSE 0 END), 0) AS sent,
             COALESCE(SUM(CASE WHEN type = 'sending' AND payment_status = 'completed' THEN account_amount ELSE 0 END), 0) AS account_deduction,
-            COALESCE(SUM(CASE WHEN type <> 'opening' AND payment_status <> 'cancelled' AND (type <> 'sending' OR payment_status = 'completed') THEN charges ELSE 0 END), 0) AS commission,
+            COALESCE(SUM(CASE WHEN type = 'receiving' AND payment_status = 'completed' THEN charges WHEN type = 'sending' AND payment_status = 'completed' THEN charges ELSE 0 END), 0) AS commission,
             COALESCE(SUM(CASE WHEN type = 'receiving' AND payment_status = 'pending' THEN amount ELSE 0 END), 0) AS pending_amount,
             COALESCE(SUM(CASE WHEN type = 'receiving' AND payment_status = 'pending' THEN 1 ELSE 0 END), 0) AS pending_count
         FROM wallet_transactions
@@ -692,8 +692,10 @@ if (!empty($accIds)) {
         SELECT COALESCE(SUM(charges), 0)
         FROM wallet_transactions
         WHERE date = ? AND account_id IN ($in) AND type != 'opening'
-          AND payment_status <> 'cancelled'
-          AND (type <> 'sending' OR payment_status = 'completed')
+          AND (
+                (type = 'receiving' AND payment_status = 'completed')
+                OR (type = 'sending' AND payment_status = 'completed')
+              )
     ");
     $params = array_merge([$currentDate], $accIds);
     $stmt->execute($params);
@@ -912,10 +914,10 @@ if ($tab === 'search') {
     $stmt = $pdo->prepare("
         SELECT
             COUNT(*) AS total_rows,
-            COALESCE(SUM(CASE WHEN wt.type='receiving' AND wt.payment_status <> 'cancelled' THEN wt.amount ELSE 0 END), 0) AS total_receiving,
+            COALESCE(SUM(CASE WHEN wt.type='receiving' AND wt.payment_status = 'completed' THEN wt.amount ELSE 0 END), 0) AS total_receiving,
             COALESCE(SUM(CASE WHEN wt.type='sending' AND wt.payment_status = 'completed' THEN wt.amount ELSE 0 END), 0) AS total_sending,
             COALESCE(SUM(CASE WHEN wt.type='sending' AND wt.payment_status = 'completed' THEN wt.account_amount ELSE 0 END), 0) AS total_account_deduction,
-            COALESCE(SUM(CASE WHEN wt.type <> 'opening' AND wt.payment_status <> 'cancelled' AND (wt.type <> 'sending' OR wt.payment_status = 'completed') THEN wt.charges ELSE 0 END), 0) AS total_commission,
+            COALESCE(SUM(CASE WHEN wt.type='receiving' AND wt.payment_status = 'completed' THEN wt.charges WHEN wt.type='sending' AND wt.payment_status = 'completed' THEN wt.charges ELSE 0 END), 0) AS total_commission,
             COALESCE(SUM(CASE WHEN wt.type='receiving' AND wt.payment_status='pending' THEN wt.amount ELSE 0 END), 0) AS total_pending_amount,
             COALESCE(SUM(CASE WHEN wt.type='receiving' AND wt.payment_status='pending' THEN 1 ELSE 0 END), 0) AS total_pending_count
         FROM wallet_transactions wt
@@ -1067,7 +1069,7 @@ $isInternalTransferEdit = $editTxn && (string) ($editTxn['entry_context'] ?? 'ex
                 <label class="form-label text-xs uppercase tracking-wider text-gray-500 mb-1">Status</label>
                 <?php $editPaymentStatus = (string) ($editTxn['payment_status'] ?? 'completed'); ?>
                 <select class="form-select bg-gray-50 border-0 shadow-sm rounded-xl" name="txn_payment_status">
-                    <option value="completed" <?= $editPaymentStatus === 'completed' ? 'selected' : '' ?>>Completed</option>
+                    <option value="completed" <?= $editPaymentStatus === 'completed' ? 'selected' : '' ?>>Received</option>
                     <option value="pending" <?= $editPaymentStatus === 'pending' ? 'selected' : '' ?>>Pending</option>
                     <option value="cancelled" <?= $editPaymentStatus === 'cancelled' ? 'selected' : '' ?>>Cancelled</option>
                 </select>
@@ -1100,7 +1102,7 @@ $isInternalTransferEdit = $editTxn && (string) ($editTxn['entry_context'] ?? 'ex
                     <?php if ($editType === 'sending'): ?>
                         | Cash Drawer Impact: <strong>Rs. <?= h(number_format($editAmount, 2)) ?></strong>
                     <?php endif; ?>
-                    | Completed At: <strong><?= h((string) ($editTxn['completed_at'] ?? '')) ?: 'Not completed yet' ?></strong>
+                    | Received At: <strong><?= h((string) ($editTxn['completed_at'] ?? '')) ?: 'Not received yet' ?></strong>
                 </div>
             </div>
             <div class="md:col-span-4 mt-2">
@@ -1161,7 +1163,7 @@ $isInternalTransferEdit = $editTxn && (string) ($editTxn['entry_context'] ?? 'ex
                 <select class="form-select" name="status">
                     <option value="">All</option>
                     <option value="pending" <?= $searchStatus === 'pending' ? 'selected' : '' ?>>Pending</option>
-                    <option value="completed" <?= $searchStatus === 'completed' ? 'selected' : '' ?>>Completed</option>
+                    <option value="completed" <?= $searchStatus === 'completed' ? 'selected' : '' ?>>Received</option>
                     <option value="cancelled" <?= $searchStatus === 'cancelled' ? 'selected' : '' ?>>Cancelled</option>
                 </select>
             </div>
@@ -1216,7 +1218,7 @@ $isInternalTransferEdit = $editTxn && (string) ($editTxn['entry_context'] ?? 'ex
         <div class="col-12 col-md-3">
             <div class="card border-0 shadow-sm">
                 <div class="card-body">
-                    <div class="text-muted small">Pending Payments</div>
+                    <div class="text-muted small">Pending Receivables</div>
                     <div class="h5 mb-0"><?= h((string) $searchTotals['pending_count']) ?> / Rs <?= h(number_format((float) $searchTotals['pending_amount'], 2)) ?></div>
                 </div>
             </div>
@@ -1262,7 +1264,7 @@ $isInternalTransferEdit = $editTxn && (string) ($editTxn['entry_context'] ?? 'ex
                         <td><?= h((string) ($r['date'] ?? '')) ?></td>
                         <td><?= h((string) ($r['account_name'] ?? '')) ?></td>
                         <td><?= h((string) ($r['type'] ?? '')) ?></td>
-                        <td><?= h(ucfirst((string) ($r['payment_status'] ?? 'completed'))) ?></td>
+                        <td><?= h((string) (($r['payment_status'] ?? 'completed') === 'completed' ? 'Received' : ucfirst((string) ($r['payment_status'] ?? 'completed')))) ?></td>
                         <td class="text-end" style="<?= h($amountStyle) ?>"><?= h(number_format((float) ($r['amount'] ?? 0), 2)) ?></td>
                         <td class="text-end"><?= h(number_format((float) ($r['charges'] ?? 0), 2)) ?></td>
                         <td class="text-end"><?= h(number_format((float) ($r['account_amount'] ?? ($r['amount'] ?? 0)), 2)) ?></td>
@@ -1399,7 +1401,7 @@ $isInternalTransferEdit = $editTxn && (string) ($editTxn['entry_context'] ?? 'ex
                     <div class="text-xl font-extrabold text-indigo-600">Rs. <?= number_format($totalAccountDeduction, 2) ?></div>
                 </div>
                 <div class="bg-amber-50/50 p-4 rounded-2xl border border-amber-100 shadow-sm hover:shadow-md transition-shadow group">
-                    <div class="text-xs font-bold text-amber-700 uppercase tracking-wider mb-2">Pending Payments</div>
+                    <div class="text-xs font-bold text-amber-700 uppercase tracking-wider mb-2">Pending Receivables</div>
                     <div class="text-xl font-extrabold text-amber-600"><?= h((string) $totalPendingCount) ?> / Rs. <?= number_format($totalPendingAmount, 2) ?></div>
                 </div>
                 <div class="col-span-2 bg-gradient-to-r from-brand-50 to-blue-50 p-5 rounded-2xl border border-brand-100 shadow-sm relative overflow-hidden group">
@@ -1519,7 +1521,7 @@ $isInternalTransferEdit = $editTxn && (string) ($editTxn['entry_context'] ?? 'ex
             <div>
                 <label class="form-label text-xs uppercase tracking-wider text-gray-500 mb-1">Status</label>
                 <select name="payment_status" class="form-select bg-gray-50 border-0 shadow-sm rounded-xl">
-                    <option value="completed">Completed</option>
+                    <option value="completed">Received</option>
                     <option value="pending">Pending</option>
                     <option value="cancelled">Cancelled</option>
                 </select>
@@ -1747,7 +1749,7 @@ $isInternalTransferEdit = $editTxn && (string) ($editTxn['entry_context'] ?? 'ex
                                     <span class="d-inline-block px-2 py-1 rounded-pill bg-rose-50 text-rose-600 border border-rose-100 text-xs fw-medium">Sending</span>
                                 <?php endif; ?>
                             </td>
-                            <td class="py-3 px-4 text-gray-700"><?= h(ucfirst((string) ($t['payment_status'] ?? 'completed'))) ?></td>
+                            <td class="py-3 px-4 text-gray-700"><?= h((string) (($t['payment_status'] ?? 'completed') === 'completed' ? 'Received' : ucfirst((string) ($t['payment_status'] ?? 'completed')))) ?></td>
                             <td class="py-3 px-4 text-end fw-bold <?= $isRec ? 'text-emerald-600' : 'text-rose-600' ?>">
                                 <?= $isRec ? '+' : '-' ?><?= number_format((float)$t['amount'], 2) ?>
                             </td>
@@ -1826,7 +1828,7 @@ $isInternalTransferEdit = $editTxn && (string) ($editTxn['entry_context'] ?? 'ex
                     <span class="text-sm text-indigo-600 fw-bold">-Rs. <?= number_format($totalAccountDeduction, 2) ?></span>
                 </div>
                 <div class="d-flex justify-content-between align-items-center">
-                    <span class="text-sm text-gray-500 fw-medium">Pending Payments</span>
+                    <span class="text-sm text-gray-500 fw-medium">Pending Receivables</span>
                     <span class="text-sm text-amber-600 fw-bold"><?= h((string) $totalPendingCount) ?> / Rs. <?= number_format($totalPendingAmount, 2) ?></span>
                 </div>
                 
