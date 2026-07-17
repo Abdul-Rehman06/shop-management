@@ -8,6 +8,7 @@ require_once __DIR__ . '/sales_lib.php';
 $pageTitle = 'Exchange - Shop Management';
 
 $pdo = db();
+$adminId = inv_current_admin_id();
 
 $saleId = (int) ($_GET['id'] ?? 0);
 if ($saleId <= 0) {
@@ -60,57 +61,91 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } else {
         $qtyInt = (int) $returnQty;
         $newProduct = $productsMap[$newProductId];
+        $availableStock = (int) ($newProduct['stock'] ?? 0);
+        if ($newProductId === (int) $sale['product_id']) {
+            $availableStock += $qtyInt;
+        }
         $purchase = (float) $newProduct['purchase_price'];
         $salePrice = (float) $newSalePrice;
         $profit = sales_profit_total($purchase, $salePrice, $qtyInt);
         $profitAdj = sales_profit_adjustment_for_return((float) $sale['profit'], (int) $sale['quantity'], $qtyInt);
 
-        $pdo->beginTransaction();
-        try {
-            $stmt = $pdo->prepare("
-                INSERT INTO sales_returns (sale_id, quantity, return_date, reason, notes, profit_adjustment)
-                VALUES (:sale_id, :quantity, :return_date, 'exchange', :notes, :profit_adjustment)
-            ");
-            $stmt->execute([
-                ':sale_id' => $saleId,
-                ':quantity' => $qtyInt,
-                ':return_date' => $exchangeDate,
-                ':notes' => $notes !== '' ? $notes : null,
-                ':profit_adjustment' => $profitAdj,
-            ]);
-            $returnId = (int) $pdo->lastInsertId();
+        if ($qtyInt > $availableStock) {
+            $error = 'Insufficient stock for exchange product. Available stock is ' . $availableStock . '.';
+        } else {
+            $pdo->beginTransaction();
+            try {
+                $stmt = $pdo->prepare("
+                    INSERT INTO sales_returns (sale_id, quantity, return_date, reason, notes, profit_adjustment)
+                    VALUES (:sale_id, :quantity, :return_date, 'exchange', :notes, :profit_adjustment)
+                ");
+                $stmt->execute([
+                    ':sale_id' => $saleId,
+                    ':quantity' => $qtyInt,
+                    ':return_date' => $exchangeDate,
+                    ':notes' => $notes !== '' ? $notes : null,
+                    ':profit_adjustment' => $profitAdj,
+                ]);
+                $returnId = (int) $pdo->lastInsertId();
 
-            $stmt = $pdo->prepare("
-                INSERT INTO sales (product_id, quantity, sale_price, profit)
-                VALUES (:product_id, :quantity, :sale_price, :profit)
-            ");
-            $stmt->execute([
-                ':product_id' => $newProductId,
-                ':quantity' => $qtyInt,
-                ':sale_price' => $salePrice,
-                ':profit' => $profit,
-            ]);
-            $newSaleId = (int) $pdo->lastInsertId();
+                inv_adjust_stock(
+                    $pdo,
+                    (int) $sale['product_id'],
+                    $qtyInt,
+                    $exchangeDate,
+                    'customer_return',
+                    $adminId,
+                    'sale_return',
+                    $returnId,
+                    'EXR-' . $returnId,
+                    'Original product returned during exchange.'
+                );
 
-            $stmt = $pdo->prepare("
-                INSERT INTO sales_exchanges (return_id, new_sale_id, exchange_date, notes)
-                VALUES (:return_id, :new_sale_id, :exchange_date, :notes)
-            ");
-            $stmt->execute([
-                ':return_id' => $returnId,
-                ':new_sale_id' => $newSaleId,
-                ':exchange_date' => $exchangeDate,
-                ':notes' => $notes !== '' ? $notes : null,
-            ]);
+                $stmt = $pdo->prepare("
+                    INSERT INTO sales (product_id, quantity, sale_price, profit)
+                    VALUES (:product_id, :quantity, :sale_price, :profit)
+                ");
+                $stmt->execute([
+                    ':product_id' => $newProductId,
+                    ':quantity' => $qtyInt,
+                    ':sale_price' => $salePrice,
+                    ':profit' => $profit,
+                ]);
+                $newSaleId = (int) $pdo->lastInsertId();
 
-            $pdo->commit();
-            flash_set('success', 'Exchange saved.');
-            app_redirect('sales/index.php');
-        } catch (Throwable $e) {
-            if ($pdo->inTransaction()) {
-                $pdo->rollBack();
+                inv_adjust_stock(
+                    $pdo,
+                    $newProductId,
+                    -1 * $qtyInt,
+                    $exchangeDate,
+                    'sale',
+                    $adminId,
+                    'sale',
+                    $newSaleId,
+                    'SALE-' . $newSaleId,
+                    'Exchange product sold.'
+                );
+
+                $stmt = $pdo->prepare("
+                    INSERT INTO sales_exchanges (return_id, new_sale_id, exchange_date, notes)
+                    VALUES (:return_id, :new_sale_id, :exchange_date, :notes)
+                ");
+                $stmt->execute([
+                    ':return_id' => $returnId,
+                    ':new_sale_id' => $newSaleId,
+                    ':exchange_date' => $exchangeDate,
+                    ':notes' => $notes !== '' ? $notes : null,
+                ]);
+
+                $pdo->commit();
+                flash_set('success', 'Exchange saved.');
+                app_redirect('sales/index.php');
+            } catch (Throwable $e) {
+                if ($pdo->inTransaction()) {
+                    $pdo->rollBack();
+                }
+                $error = 'Could not save exchange.';
             }
-            $error = 'Could not save exchange.';
         }
     }
 }

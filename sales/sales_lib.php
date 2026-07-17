@@ -2,10 +2,12 @@
 
 declare(strict_types=1);
 
+require_once __DIR__ . '/../inventory/inv_lib.php';
+
 function sales_products(PDO $pdo): array
 {
     return $pdo->query('
-        SELECT id, product_name, purchase_price, sale_price
+        SELECT id, product_name, category, brand, sku, purchase_price, sale_price, stock
         FROM products
         ORDER BY product_name ASC
     ')->fetchAll();
@@ -14,7 +16,7 @@ function sales_products(PDO $pdo): array
 function sales_product_by_id(PDO $pdo, int $id): ?array
 {
     $stmt = $pdo->prepare('
-        SELECT id, product_name, purchase_price, sale_price
+        SELECT id, product_name, category, brand, sku, purchase_price, sale_price, stock
         FROM products
         WHERE id = :id
         LIMIT 1
@@ -51,4 +53,9 @@ function sales_profit_adjustment_for_return(float $saleProfit, int $saleQty, int
 function sales_profit_total(float $purchasePrice, float $salePrice, int $quantity): float
 {
     return ($salePrice - $purchasePrice) * $quantity;
+}
+
+function sales_has_returns(PDO $pdo, int $saleId): bool
+{
+    return sales_returned_qty($pdo, $saleId) > 0;
 }

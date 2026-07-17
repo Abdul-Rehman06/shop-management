@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+require_once __DIR__ . '/../inventory/inv_lib.php';
+
 function report_modules(): array
 {
     return [
@@ -14,6 +16,7 @@ function report_modules(): array
         'bank' => 'Bank Transfer',
         'expenses' => 'Expenses',
         'sales' => 'Sales',
+        'inventory' => 'Inventory',
         'dealer_ledger' => 'Dealer Statement',
         'dealer_payments' => 'Dealer Payments',
         'bill_payments' => 'Bill Payments',
@@ -86,6 +89,8 @@ function report_filters_from_request(): array
     $company = trim((string) ($_GET['company'] ?? ''));
     $status = trim((string) ($_GET['status'] ?? ''));
     $q = trim((string) ($_GET['q'] ?? ''));
+    $category = trim((string) ($_GET['category'] ?? ''));
+    $stockStatus = trim((string) ($_GET['stock_status'] ?? ''));
 
     return [
         'module' => $module,
@@ -99,6 +104,8 @@ function report_filters_from_request(): array
         'company' => $company,
         'status' => $status,
         'q' => $q,
+        'category' => $category,
+        'stock_status' => $stockStatus,
         'range' => $range,
     ];
 }
@@ -796,6 +803,152 @@ function report_fetch(PDO $pdo, array $filters): array
             }, $rows),
             'summary' => [
                 'Total' => number_format($total, 2),
+            ],
+        ];
+    }
+
+    if ($module === 'inventory') {
+        $category = trim((string) ($filters['category'] ?? ''));
+        $stockStatus = trim((string) ($filters['stock_status'] ?? ''));
+        $q = trim((string) ($filters['q'] ?? ''));
+
+        $productFilters = [
+            'q' => $q,
+            'category' => $category,
+            'status' => $stockStatus,
+        ];
+        $products = inv_product_rows($pdo, $productFilters, 500);
+
+        $purchaseRows = inv_purchase_rows($pdo, [
+            'from' => $from,
+            'to' => $to,
+            'q' => $q,
+        ], 1000);
+        $damageRows = inv_damage_rows($pdo, [
+            'from' => $from,
+            'to' => $to,
+            'q' => $q,
+        ], 1000);
+
+        $purchaseByProduct = [];
+        foreach ($purchaseRows as $row) {
+            $productKey = (int) ($row['product_id'] ?? 0);
+            if ($productKey <= 0) {
+                continue;
+            }
+            if (!isset($purchaseByProduct[$productKey])) {
+                $purchaseByProduct[$productKey] = ['qty' => 0, 'amount' => 0.0];
+            }
+            $purchaseByProduct[$productKey]['qty'] += (int) ($row['quantity'] ?? 0);
+            $purchaseByProduct[$productKey]['amount'] += (float) ($row['total_amount'] ?? 0);
+        }
+
+        $damageByProduct = [];
+        foreach ($damageRows as $row) {
+            $productKey = (int) ($row['product_id'] ?? 0);
+            if ($productKey <= 0) {
+                continue;
+            }
+            $damageByProduct[$productKey] = (int) ($damageByProduct[$productKey] ?? 0) + (int) ($row['quantity'] ?? 0);
+        }
+
+        $stmt = $pdo->prepare("
+            SELECT
+                s.product_id,
+                COALESCE(SUM(s.quantity), 0) AS sold_qty,
+                COALESCE(SUM(s.quantity * s.sale_price), 0) AS sales_value,
+                COALESCE(SUM(s.profit), 0) + COALESCE(SUM(r.profit_adj), 0) AS gross_profit,
+                COALESCE(SUM(r.returned_qty), 0) AS returned_qty
+            FROM sales s
+            LEFT JOIN (
+                SELECT sale_id, COALESCE(SUM(quantity), 0) AS returned_qty, COALESCE(SUM(profit_adjustment), 0) AS profit_adj
+                FROM sales_returns
+                GROUP BY sale_id
+            ) r ON r.sale_id = s.id
+            WHERE s.created_at >= :from AND s.created_at <= :to
+            GROUP BY s.product_id
+        ");
+        $stmt->execute([
+            ':from' => $from . ' 00:00:00',
+            ':to' => $to . ' 23:59:59',
+        ]);
+        $salesRows = $stmt->fetchAll();
+
+        $salesByProduct = [];
+        foreach ($salesRows as $row) {
+            $salesByProduct[(int) ($row['product_id'] ?? 0)] = [
+                'qty' => (int) ($row['sold_qty'] ?? 0),
+                'sales_value' => (float) ($row['sales_value'] ?? 0),
+                'gross_profit' => (float) ($row['gross_profit'] ?? 0),
+                'returned_qty' => (int) ($row['returned_qty'] ?? 0),
+            ];
+        }
+
+        $reportRows = [];
+        $summary = [
+            'Purchased Quantity' => 0,
+            'Sold Quantity' => 0,
+            'Remaining Stock' => 0,
+            'Purchase Value' => 0.0,
+            'Sales Value' => 0.0,
+            'Gross Profit' => 0.0,
+            'Current Purchase Value' => 0.0,
+            'Expected Selling Value' => 0.0,
+            'Expected Profit' => 0.0,
+        ];
+
+        foreach ($products as $product) {
+            $productId = (int) ($product['id'] ?? 0);
+            $purchaseQty = (int) ($purchaseByProduct[$productId]['qty'] ?? 0);
+            $purchaseValue = (float) ($purchaseByProduct[$productId]['amount'] ?? 0);
+            $soldQty = (int) ($salesByProduct[$productId]['qty'] ?? 0);
+            $returnedQty = (int) ($salesByProduct[$productId]['returned_qty'] ?? 0);
+            $netSoldQty = max(0, $soldQty - $returnedQty);
+            $salesValue = (float) ($salesByProduct[$productId]['sales_value'] ?? 0);
+            $grossProfit = (float) ($salesByProduct[$productId]['gross_profit'] ?? 0);
+            $remainingStock = (int) ($product['current_stock'] ?? 0);
+            $currentPurchaseValue = (float) ($product['stock_value'] ?? 0);
+            $expectedSellingValue = (float) ($product['selling_value'] ?? 0);
+            $expectedProfit = (float) ($product['expected_profit'] ?? 0);
+
+            $summary['Purchased Quantity'] += $purchaseQty;
+            $summary['Sold Quantity'] += $netSoldQty;
+            $summary['Remaining Stock'] += $remainingStock;
+            $summary['Purchase Value'] += $purchaseValue;
+            $summary['Sales Value'] += $salesValue;
+            $summary['Gross Profit'] += $grossProfit;
+            $summary['Current Purchase Value'] += $currentPurchaseValue;
+            $summary['Expected Selling Value'] += $expectedSellingValue;
+            $summary['Expected Profit'] += $expectedProfit;
+
+            $reportRows[] = [
+                (string) ($product['product_name'] ?? ''),
+                (string) ($product['category'] ?? ''),
+                (string) ($product['sku'] ?? ''),
+                (string) $purchaseQty,
+                (string) $netSoldQty,
+                (string) $remainingStock,
+                number_format($purchaseValue, 2, '.', ''),
+                number_format($salesValue, 2, '.', ''),
+                number_format($grossProfit, 2, '.', ''),
+                number_format($currentPurchaseValue, 2, '.', ''),
+                number_format($expectedSellingValue, 2, '.', ''),
+            ];
+        }
+
+        return [
+            'headers' => ['Product', 'Category', 'SKU', 'Purchased Qty', 'Sold Qty', 'Remaining Stock', 'Purchase Value', 'Sales Value', 'Gross Profit', 'Current Purchase Value', 'Expected Selling Value'],
+            'rows' => $reportRows,
+            'summary' => [
+                'Purchased Quantity' => (string) $summary['Purchased Quantity'],
+                'Sold Quantity' => (string) $summary['Sold Quantity'],
+                'Remaining Stock' => (string) $summary['Remaining Stock'],
+                'Purchase Value' => number_format((float) $summary['Purchase Value'], 2),
+                'Sales Value' => number_format((float) $summary['Sales Value'], 2),
+                'Gross Profit' => number_format((float) $summary['Gross Profit'], 2),
+                'Current Purchase Value' => number_format((float) $summary['Current Purchase Value'], 2),
+                'Expected Selling Value' => number_format((float) $summary['Expected Selling Value'], 2),
+                'Expected Profit' => number_format((float) $summary['Expected Profit'], 2),
             ],
         ];
     }

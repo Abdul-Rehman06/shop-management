@@ -10,6 +10,7 @@ $pageTitle = 'Add Sale - Shop Management';
 $pdo = db();
 $canViewProfit = app_can_view_profit();
 $products = sales_products($pdo);
+$adminId = inv_current_admin_id();
 
 $creditCustomers = [];
 try {
@@ -50,9 +51,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $purchase = (float) $product['purchase_price'];
         $sale = (float) $salePrice;
         $qty = (int) $quantity;
+        $availableStock = (int) ($product['stock'] ?? 0);
         $profit = sales_profit_total($purchase, $sale, $qty);
 
-        if ($creditCustomerId > 0) {
+        if ($qty > $availableStock) {
+            $error = 'Insufficient stock. Available stock is ' . $availableStock . '.';
+        } elseif ($creditCustomerId > 0) {
             $stmt = $pdo->prepare("
                 SELECT
                     COALESCE(SUM(CASE WHEN txn_type='advance' THEN amount ELSE 0 END), 0) AS adv_total,
@@ -83,6 +87,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 ]);
                 $saleId = (int) $pdo->lastInsertId();
 
+                inv_adjust_stock(
+                    $pdo,
+                    $productId,
+                    -1 * $qty,
+                    date('Y-m-d'),
+                    'sale',
+                    $adminId,
+                    'sale',
+                    $saleId,
+                    'SALE-' . $saleId,
+                    'Stock reduced after sale.'
+                );
+
                 if ($creditCustomerId > 0) {
                     $stmt = $pdo->prepare("
                         INSERT INTO credit_transactions (customer_id, txn_date, txn_type, amount, notes)
@@ -111,6 +128,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 $selected = $productsMap[$productId] ?? null;
 $purchasePrice = $selected ? (float) $selected['purchase_price'] : 0.0;
+$stockAvailable = $selected ? (int) ($selected['stock'] ?? 0) : 0;
 $defaultSale = $selected ? (float) $selected['sale_price'] : 0.0;
 if ($salePrice === '' && $defaultSale > 0) {
     $salePrice = (string) $defaultSale;
@@ -167,6 +185,11 @@ require_once __DIR__ . '/../includes/sidebar.php';
                     <?php endif; ?>
 
                     <div class="col-12 col-md-3">
+                        <label class="form-label" for="available_stock">Available Stock</label>
+                        <input class="form-control" type="number" id="available_stock" value="<?= h((string) $stockAvailable) ?>" disabled>
+                    </div>
+
+                    <div class="col-12 col-md-3">
                         <label class="form-label" for="quantity">Quantity</label>
                         <input class="form-control" type="number" step="1" min="1" id="quantity" name="quantity" value="<?= h($quantity) ?>" required>
                     </div>
@@ -211,6 +234,7 @@ require_once __DIR__ . '/../includes/sidebar.php';
         const products = Array.isArray(window.__products) ? window.__products : [];
         const productSelect = document.getElementById('product_id');
         const purchaseInput = document.getElementById('purchase_price');
+        const stockInput = document.getElementById('available_stock');
         const qtyInput = document.getElementById('quantity');
         const saleInput = document.getElementById('sale_price');
         const profitInput = document.getElementById('profit_total');
@@ -223,10 +247,19 @@ require_once __DIR__ . '/../includes/sidebar.php';
         function recalc() {
             const p = selectedProduct();
             const purchase = p && typeof p.purchase_price !== 'undefined' ? (parseFloat(p.purchase_price) || 0) : 0;
+            const stock = p && typeof p.stock !== 'undefined' ? (parseInt(p.stock, 10) || 0) : 0;
             const qty = parseInt(qtyInput.value || '0', 10) || 0;
             const sale = parseFloat(saleInput.value || '0') || 0;
             if (purchaseInput) {
                 purchaseInput.value = purchase.toFixed(2);
+            }
+            if (stockInput) {
+                stockInput.value = String(stock);
+            }
+            if (qty > stock) {
+                qtyInput.setCustomValidity(`Only ${stock} items available in stock.`);
+            } else {
+                qtyInput.setCustomValidity('');
             }
             if (profitInput) {
                 const profit = (sale - purchase) * qty;

@@ -51,8 +51,11 @@ require_once __DIR__ . '/../includes/sidebar.php';
     <div class="card-body">
         <div class="row g-2">
             <div class="col-12 col-md-4"><span class="text-muted">Product:</span> <?= h((string) $row['product_name']) ?></div>
+            <div class="col-12 col-md-4"><span class="text-muted">Category:</span> <?= h((string) ($row['category'] ?? 'Others')) ?></div>
+            <div class="col-12 col-md-4"><span class="text-muted">SKU:</span> <?= h((string) ($row['sku'] ?? '')) ?></div>
             <div class="col-12 col-md-4"><span class="text-muted">Purchase:</span> <?= h(number_format((float) $row['purchase_price'], 2)) ?></div>
             <div class="col-12 col-md-4"><span class="text-muted">Sale:</span> <?= h(number_format((float) $row['sale_price'], 2)) ?></div>
+            <div class="col-12 col-md-4"><span class="text-muted">Current Stock:</span> <?= h((string) (int) ($row['current_stock'] ?? $row['stock'] ?? 0)) ?></div>
         </div>
     </div>
 </div>

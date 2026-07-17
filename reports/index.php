@@ -32,6 +32,7 @@ $dealerTxnTypes = [
     'dealer_payment' => 'Dealer Payment',
 ];
 $billCompanies = bill_fetch_companies($pdo);
+$inventoryCategories = inv_product_categories_in_use($pdo);
 
 $canViewProfit = app_can_view_profit();
 if (!$canViewProfit && in_array($filters['module'], ['sales', 'load', 'load_txn'], true)) {
@@ -102,6 +103,14 @@ if ($filters['module'] === 'all') {
     $salesProfit = $get($allReports, 'sales', 'Total Profit', $toNumber);
     if ($salesProfit !== null) {
         $topCards[] = ['label' => 'Profit', 'value' => number_format($salesProfit, 2)];
+    }
+    $inventoryValue = $get($allReports, 'inventory', 'Current Purchase Value', $toNumber);
+    if ($inventoryValue !== null) {
+        $topCards[] = ['label' => 'Inventory Value', 'value' => number_format($inventoryValue, 2)];
+    }
+    $inventoryProfit = $get($allReports, 'inventory', 'Expected Profit', $toNumber);
+    if ($inventoryProfit !== null) {
+        $topCards[] = ['label' => 'Expected Inv. Profit', 'value' => number_format($inventoryProfit, 2)];
     }
     $expTotal = $get($allReports, 'expenses', 'Total', $toNumber);
     if ($expTotal !== null) {
@@ -186,6 +195,12 @@ if (($filters['status'] ?? '') !== '') {
 }
 if (($filters['q'] ?? '') !== '') {
     $query['q'] = (string) ($filters['q'] ?? '');
+}
+if (($filters['category'] ?? '') !== '') {
+    $query['category'] = (string) ($filters['category'] ?? '');
+}
+if (($filters['stock_status'] ?? '') !== '') {
+    $query['stock_status'] = (string) ($filters['stock_status'] ?? '');
 }
 
 $baseQueryString = http_build_query($query);
@@ -345,6 +360,29 @@ require_once __DIR__ . '/../includes/sidebar.php';
                 <div>
                     <label class="form-label text-xs uppercase tracking-wider text-gray-500 mb-1" for="q">Search</label>
                     <input class="form-control bg-gray-50 border-0 shadow-sm rounded-xl" id="q" name="q" value="<?= h((string) ($filters['q'] ?? '')) ?>" placeholder="Customer or Bill ID">
+                </div>
+            <?php elseif ($filters['module'] === 'inventory'): ?>
+                <div>
+                    <label class="form-label text-xs uppercase tracking-wider text-gray-500 mb-1" for="category">Category</label>
+                    <select class="form-select bg-gray-50 border-0 shadow-sm rounded-xl" id="category" name="category">
+                        <option value="">All</option>
+                        <?php foreach ($inventoryCategories as $categoryName): ?>
+                            <option value="<?= h($categoryName) ?>" <?= (string) ($filters['category'] ?? '') === $categoryName ? 'selected' : '' ?>><?= h($categoryName) ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+                <div>
+                    <label class="form-label text-xs uppercase tracking-wider text-gray-500 mb-1" for="stock_status">Status</label>
+                    <select class="form-select bg-gray-50 border-0 shadow-sm rounded-xl" id="stock_status" name="stock_status">
+                        <option value="">All</option>
+                        <option value="in_stock" <?= (string) ($filters['stock_status'] ?? '') === 'in_stock' ? 'selected' : '' ?>>In Stock</option>
+                        <option value="low_stock" <?= (string) ($filters['stock_status'] ?? '') === 'low_stock' ? 'selected' : '' ?>>Low Stock</option>
+                        <option value="out_of_stock" <?= (string) ($filters['stock_status'] ?? '') === 'out_of_stock' ? 'selected' : '' ?>>Out of Stock</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="form-label text-xs uppercase tracking-wider text-gray-500 mb-1" for="q">Search</label>
+                    <input class="form-control bg-gray-50 border-0 shadow-sm rounded-xl" id="q" name="q" value="<?= h((string) ($filters['q'] ?? '')) ?>" placeholder="Product, SKU or brand">
                 </div>
             <?php endif; ?>
         </form>

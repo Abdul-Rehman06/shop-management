@@ -20,10 +20,13 @@ if (!$saleRow) {
 }
 
 $products = sales_products($pdo);
+$adminId = inv_current_admin_id();
 $productsMap = [];
 foreach ($products as $p) {
     $productsMap[(int) $p['id']] = $p;
 }
+
+$returnedQty = sales_returned_qty($pdo, $id);
 
 $productId = (int) $saleRow['product_id'];
 $quantity = (string) $saleRow['quantity'];
@@ -35,7 +38,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $quantity = trim((string) ($_POST['quantity'] ?? ''));
     $salePrice = trim((string) ($_POST['sale_price'] ?? ''));
 
-    if ($productId <= 0 || !isset($productsMap[$productId])) {
+    if ($returnedQty > 0) {
+        $error = 'Sale with return or exchange history cannot be edited.';
+    } elseif ($productId <= 0 || !isset($productsMap[$productId])) {
         $error = 'Please select a product.';
     } elseif ($quantity === '' || !ctype_digit($quantity) || (int) $quantity <= 0) {
         $error = 'Quantity must be a positive whole number.';
@@ -46,31 +51,97 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $purchase = (float) $product['purchase_price'];
         $sale = (float) $salePrice;
         $qty = (int) $quantity;
+        $oldProductId = (int) $saleRow['product_id'];
+        $oldQty = (int) $saleRow['quantity'];
+        $availableStock = (int) ($product['stock'] ?? 0);
+        if ($productId === $oldProductId) {
+            $availableStock += $oldQty;
+        }
         $profit = sales_profit_total($purchase, $sale, $qty);
 
-        $stmt = $pdo->prepare('
-            UPDATE sales
-            SET product_id = :product_id,
-                quantity = :quantity,
-                sale_price = :sale_price,
-                profit = :profit
-            WHERE id = :id
-        ');
-        $stmt->execute([
-            ':product_id' => $productId,
-            ':quantity' => $qty,
-            ':sale_price' => $sale,
-            ':profit' => $profit,
-            ':id' => $id,
-        ]);
+        if ($qty > $availableStock) {
+            $error = 'Insufficient stock. Available stock is ' . $availableStock . '.';
+        } else {
+            $pdo->beginTransaction();
+            try {
+                if ($productId === $oldProductId) {
+                    $deltaQty = $oldQty - $qty;
+                    if ($deltaQty !== 0) {
+                        inv_adjust_stock(
+                            $pdo,
+                            $productId,
+                            $deltaQty,
+                            date('Y-m-d'),
+                            $deltaQty > 0 ? 'manual_adjustment' : 'sale',
+                            $adminId,
+                            'sale',
+                            $id,
+                            'SALE-' . $id,
+                            'Stock updated after editing sale.'
+                        );
+                    }
+                } else {
+                    inv_adjust_stock(
+                        $pdo,
+                        $oldProductId,
+                        $oldQty,
+                        date('Y-m-d'),
+                        'manual_adjustment',
+                        $adminId,
+                        'sale',
+                        $id,
+                        'SALE-' . $id,
+                        'Previous product stock restored after editing sale.'
+                    );
+                    inv_adjust_stock(
+                        $pdo,
+                        $productId,
+                        -1 * $qty,
+                        date('Y-m-d'),
+                        'sale',
+                        $adminId,
+                        'sale',
+                        $id,
+                        'SALE-' . $id,
+                        'New product stock reduced after editing sale.'
+                    );
+                }
 
-        flash_set('success', 'Sale updated successfully.');
-        app_redirect('sales/index.php');
+                $stmt = $pdo->prepare('
+                    UPDATE sales
+                    SET product_id = :product_id,
+                        quantity = :quantity,
+                        sale_price = :sale_price,
+                        profit = :profit
+                    WHERE id = :id
+                ');
+                $stmt->execute([
+                    ':product_id' => $productId,
+                    ':quantity' => $qty,
+                    ':sale_price' => $sale,
+                    ':profit' => $profit,
+                    ':id' => $id,
+                ]);
+
+                $pdo->commit();
+                flash_set('success', 'Sale updated successfully.');
+                app_redirect('sales/index.php');
+            } catch (Throwable $e) {
+                if ($pdo->inTransaction()) {
+                    $pdo->rollBack();
+                }
+                $error = 'Could not update sale.';
+            }
+        }
     }
 }
 
 $selected = $productsMap[$productId] ?? null;
 $purchasePrice = $selected ? (float) $selected['purchase_price'] : 0.0;
+$availableStock = $selected ? (int) ($selected['stock'] ?? 0) : 0;
+if ($selected && (int) ($selected['id'] ?? 0) === (int) $saleRow['product_id']) {
+    $availableStock += (int) $saleRow['quantity'];
+}
 
 $pageTitle = 'Edit Sale - Shop Management';
 $extraHead = '<script>window.__products=' . json_encode($products, JSON_UNESCAPED_SLASHES) . ';</script>';
@@ -110,6 +181,11 @@ require_once __DIR__ . '/../includes/sidebar.php';
                 </div>
 
                 <div class="col-12 col-md-3">
+                    <label class="form-label" for="available_stock">Available Stock</label>
+                    <input class="form-control" type="number" id="available_stock" value="<?= h((string) $availableStock) ?>" disabled>
+                </div>
+
+                <div class="col-12 col-md-3">
                     <label class="form-label" for="quantity">Quantity</label>
                     <input class="form-control" type="number" step="1" min="1" id="quantity" name="quantity" value="<?= h($quantity) ?>" required>
                 </div>
@@ -136,9 +212,12 @@ require_once __DIR__ . '/../includes/sidebar.php';
     const products = Array.isArray(window.__products) ? window.__products : [];
     const productSelect = document.getElementById('product_id');
     const purchaseInput = document.getElementById('purchase_price');
+    const stockInput = document.getElementById('available_stock');
     const qtyInput = document.getElementById('quantity');
     const saleInput = document.getElementById('sale_price');
     const profitInput = document.getElementById('profit_total');
+    const originalProductId = <?= (int) $saleRow['product_id'] ?>;
+    const originalQty = <?= (int) $saleRow['quantity'] ?>;
 
     function selectedProduct() {
         const id = parseInt(productSelect.value, 10);
@@ -148,9 +227,21 @@ require_once __DIR__ . '/../includes/sidebar.php';
     function recalc() {
         const p = selectedProduct();
         const purchase = p ? parseFloat(p.purchase_price) : 0;
+        let stock = p ? (parseInt(p.stock, 10) || 0) : 0;
+        if (p && parseInt(p.id, 10) === originalProductId) {
+            stock += originalQty;
+        }
         const qty = parseInt(qtyInput.value || '0', 10) || 0;
         const sale = parseFloat(saleInput.value || '0') || 0;
         purchaseInput.value = purchase.toFixed(2);
+        if (stockInput) {
+            stockInput.value = String(stock);
+        }
+        if (qty > stock) {
+            qtyInput.setCustomValidity(`Only ${stock} items available in stock.`);
+        } else {
+            qtyInput.setCustomValidity('');
+        }
         const profit = (sale - purchase) * qty;
         profitInput.value = profit.toFixed(2);
     }

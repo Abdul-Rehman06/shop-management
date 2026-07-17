@@ -501,6 +501,212 @@ function app_ensure_schema(PDO $pdo): void
 
     try {
         $pdo->exec("
+            CREATE TABLE IF NOT EXISTS products (
+                id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+                product_name VARCHAR(150) NOT NULL,
+                category VARCHAR(100) NOT NULL DEFAULT 'Others',
+                brand VARCHAR(100) NULL,
+                sku VARCHAR(50) NULL,
+                barcode VARCHAR(80) NULL,
+                purchase_price DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+                sale_price DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+                opening_stock INT NOT NULL DEFAULT 0,
+                stock INT NOT NULL DEFAULT 0,
+                low_stock_limit INT NOT NULL DEFAULT 0,
+                unit VARCHAR(30) NOT NULL DEFAULT 'Piece',
+                created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                PRIMARY KEY (id),
+                UNIQUE KEY uq_products_product_name (product_name),
+                UNIQUE KEY uq_products_sku (sku),
+                KEY idx_products_category (category),
+                KEY idx_products_brand (brand)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        ");
+    } catch (Throwable $e) {
+    }
+
+    try {
+        $stmt = $pdo->query("SHOW COLUMNS FROM products LIKE 'category'");
+        if (!(bool) $stmt->fetchColumn()) {
+            $pdo->exec("ALTER TABLE products ADD COLUMN category VARCHAR(100) NOT NULL DEFAULT 'Others' AFTER product_name");
+            $pdo->exec("ALTER TABLE products ADD KEY idx_products_category (category)");
+        }
+    } catch (Throwable $e) {
+    }
+
+    try {
+        $stmt = $pdo->query("SHOW COLUMNS FROM products LIKE 'brand'");
+        if (!(bool) $stmt->fetchColumn()) {
+            $pdo->exec("ALTER TABLE products ADD COLUMN brand VARCHAR(100) NULL AFTER category");
+            $pdo->exec("ALTER TABLE products ADD KEY idx_products_brand (brand)");
+        }
+    } catch (Throwable $e) {
+    }
+
+    try {
+        $stmt = $pdo->query("SHOW COLUMNS FROM products LIKE 'sku'");
+        if (!(bool) $stmt->fetchColumn()) {
+            $pdo->exec("ALTER TABLE products ADD COLUMN sku VARCHAR(50) NULL AFTER brand");
+            $pdo->exec("UPDATE products SET sku = CONCAT('SKU', LPAD(id, 6, '0')) WHERE sku IS NULL OR sku = ''");
+        }
+    } catch (Throwable $e) {
+    }
+
+    try {
+        $stmt = $pdo->query("SHOW INDEX FROM products WHERE Key_name = 'uq_products_sku'");
+        if (!$stmt->fetch()) {
+            $pdo->exec("UPDATE products SET sku = CONCAT('SKU', LPAD(id, 6, '0')) WHERE sku IS NULL OR sku = ''");
+            $pdo->exec("ALTER TABLE products ADD UNIQUE KEY uq_products_sku (sku)");
+        }
+    } catch (Throwable $e) {
+    }
+
+    try {
+        $stmt = $pdo->query("SHOW COLUMNS FROM products LIKE 'barcode'");
+        if (!(bool) $stmt->fetchColumn()) {
+            $pdo->exec("ALTER TABLE products ADD COLUMN barcode VARCHAR(80) NULL AFTER sku");
+        }
+    } catch (Throwable $e) {
+    }
+
+    try {
+        $stmt = $pdo->query("SHOW COLUMNS FROM products LIKE 'opening_stock'");
+        if (!(bool) $stmt->fetchColumn()) {
+            $pdo->exec("ALTER TABLE products ADD COLUMN opening_stock INT NOT NULL DEFAULT 0 AFTER sale_price");
+            $pdo->exec("UPDATE products SET opening_stock = stock");
+            $pdo->exec("
+                UPDATE products p
+                LEFT JOIN (
+                    SELECT product_id, COALESCE(SUM(quantity), 0) AS sold_qty
+                    FROM sales
+                    GROUP BY product_id
+                ) s ON s.product_id = p.id
+                LEFT JOIN (
+                    SELECT s.product_id, COALESCE(SUM(sr.quantity), 0) AS returned_qty
+                    FROM sales_returns sr
+                    JOIN sales s ON s.id = sr.sale_id
+                    GROUP BY s.product_id
+                ) r ON r.product_id = p.id
+                SET p.stock = p.opening_stock - COALESCE(s.sold_qty, 0) + COALESCE(r.returned_qty, 0)
+            ");
+        }
+    } catch (Throwable $e) {
+    }
+
+    try {
+        $stmt = $pdo->query("SHOW COLUMNS FROM products LIKE 'unit'");
+        if (!(bool) $stmt->fetchColumn()) {
+            $pdo->exec("ALTER TABLE products ADD COLUMN unit VARCHAR(30) NOT NULL DEFAULT 'Piece' AFTER low_stock_limit");
+        }
+    } catch (Throwable $e) {
+    }
+
+    try {
+        $stmt = $pdo->query("SHOW COLUMNS FROM products LIKE 'updated_at'");
+        if (!(bool) $stmt->fetchColumn()) {
+            $pdo->exec("ALTER TABLE products ADD COLUMN updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP AFTER created_at");
+        }
+    } catch (Throwable $e) {
+    }
+
+    try {
+        $pdo->exec("
+            CREATE TABLE IF NOT EXISTS sales (
+                id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+                product_id BIGINT UNSIGNED NOT NULL,
+                quantity INT NOT NULL,
+                sale_price DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+                profit DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+                created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (id),
+                KEY idx_sales_product_id (product_id),
+                KEY idx_sales_created_at (created_at),
+                CONSTRAINT fk_sales_product_id FOREIGN KEY (product_id) REFERENCES products(id) ON UPDATE CASCADE ON DELETE RESTRICT
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        ");
+    } catch (Throwable $e) {
+    }
+
+    try {
+        $pdo->exec("
+            CREATE TABLE IF NOT EXISTS inventory_purchases (
+                id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+                purchase_date DATE NOT NULL,
+                supplier_name VARCHAR(150) NULL,
+                invoice_number VARCHAR(80) NULL,
+                product_id BIGINT UNSIGNED NOT NULL,
+                quantity INT NOT NULL DEFAULT 0,
+                purchase_price DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+                total_amount DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+                notes VARCHAR(255) NULL,
+                created_by INT UNSIGNED NULL,
+                created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (id),
+                KEY idx_inventory_purchases_date (purchase_date),
+                KEY idx_inventory_purchases_product (product_id),
+                KEY idx_inventory_purchases_invoice (invoice_number),
+                KEY idx_inventory_purchases_created_by (created_by),
+                CONSTRAINT fk_inventory_purchases_product FOREIGN KEY (product_id) REFERENCES products(id) ON UPDATE CASCADE ON DELETE RESTRICT,
+                CONSTRAINT fk_inventory_purchases_created_by FOREIGN KEY (created_by) REFERENCES admins(id) ON UPDATE CASCADE ON DELETE SET NULL
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        ");
+    } catch (Throwable $e) {
+    }
+
+    try {
+        $pdo->exec("
+            CREATE TABLE IF NOT EXISTS inventory_damages (
+                id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+                product_id BIGINT UNSIGNED NOT NULL,
+                quantity INT NOT NULL DEFAULT 0,
+                damage_date DATE NOT NULL,
+                reason VARCHAR(150) NOT NULL,
+                notes VARCHAR(255) NULL,
+                created_by INT UNSIGNED NULL,
+                created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (id),
+                KEY idx_inventory_damages_date (damage_date),
+                KEY idx_inventory_damages_product (product_id),
+                KEY idx_inventory_damages_created_by (created_by),
+                CONSTRAINT fk_inventory_damages_product FOREIGN KEY (product_id) REFERENCES products(id) ON UPDATE CASCADE ON DELETE RESTRICT,
+                CONSTRAINT fk_inventory_damages_created_by FOREIGN KEY (created_by) REFERENCES admins(id) ON UPDATE CASCADE ON DELETE SET NULL
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        ");
+    } catch (Throwable $e) {
+    }
+
+    try {
+        $pdo->exec("
+            CREATE TABLE IF NOT EXISTS inventory_movements (
+                id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+                movement_date DATE NOT NULL,
+                product_id BIGINT UNSIGNED NOT NULL,
+                transaction_type VARCHAR(40) NOT NULL,
+                quantity INT NOT NULL DEFAULT 0,
+                previous_stock INT NOT NULL DEFAULT 0,
+                new_stock INT NOT NULL DEFAULT 0,
+                reference_type VARCHAR(40) NULL,
+                reference_id BIGINT UNSIGNED NULL,
+                reference_no VARCHAR(80) NULL,
+                remarks VARCHAR(255) NULL,
+                created_by INT UNSIGNED NULL,
+                created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (id),
+                KEY idx_inventory_movements_date (movement_date),
+                KEY idx_inventory_movements_product (product_id),
+                KEY idx_inventory_movements_type (transaction_type),
+                KEY idx_inventory_movements_reference (reference_type, reference_id),
+                KEY idx_inventory_movements_created_by (created_by),
+                CONSTRAINT fk_inventory_movements_product FOREIGN KEY (product_id) REFERENCES products(id) ON UPDATE CASCADE ON DELETE RESTRICT,
+                CONSTRAINT fk_inventory_movements_created_by FOREIGN KEY (created_by) REFERENCES admins(id) ON UPDATE CASCADE ON DELETE SET NULL
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        ");
+    } catch (Throwable $e) {
+    }
+
+    try {
+        $pdo->exec("
             CREATE TABLE IF NOT EXISTS sales_returns (
                 id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
                 sale_id BIGINT UNSIGNED NOT NULL,

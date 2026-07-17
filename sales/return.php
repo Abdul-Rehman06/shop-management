@@ -8,6 +8,7 @@ require_once __DIR__ . '/sales_lib.php';
 $pageTitle = 'Return Sale - Shop Management';
 
 $pdo = db();
+$adminId = inv_current_admin_id();
 
 $saleId = (int) ($_GET['id'] ?? 0);
 if ($saleId <= 0) {
@@ -47,20 +48,43 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $qtyInt = (int) $qty;
         $profitAdj = sales_profit_adjustment_for_return((float) $sale['profit'], (int) $sale['quantity'], $qtyInt);
 
-        $stmt = $pdo->prepare("
-            INSERT INTO sales_returns (sale_id, quantity, return_date, reason, notes, profit_adjustment)
-            VALUES (:sale_id, :quantity, :return_date, 'return', :notes, :profit_adjustment)
-        ");
-        $stmt->execute([
-            ':sale_id' => $saleId,
-            ':quantity' => $qtyInt,
-            ':return_date' => $returnDate,
-            ':notes' => $notes !== '' ? $notes : null,
-            ':profit_adjustment' => $profitAdj,
-        ]);
+        $pdo->beginTransaction();
+        try {
+            $stmt = $pdo->prepare("
+                INSERT INTO sales_returns (sale_id, quantity, return_date, reason, notes, profit_adjustment)
+                VALUES (:sale_id, :quantity, :return_date, 'return', :notes, :profit_adjustment)
+            ");
+            $stmt->execute([
+                ':sale_id' => $saleId,
+                ':quantity' => $qtyInt,
+                ':return_date' => $returnDate,
+                ':notes' => $notes !== '' ? $notes : null,
+                ':profit_adjustment' => $profitAdj,
+            ]);
+            $returnId = (int) $pdo->lastInsertId();
 
-        flash_set('success', 'Return saved.');
-        app_redirect('sales/index.php');
+            inv_adjust_stock(
+                $pdo,
+                (int) $sale['product_id'],
+                $qtyInt,
+                $returnDate,
+                'customer_return',
+                $adminId,
+                'sale_return',
+                $returnId,
+                'RET-' . $returnId,
+                $notes !== '' ? $notes : 'Stock increased after customer return.'
+            );
+
+            $pdo->commit();
+            flash_set('success', 'Return saved.');
+            app_redirect('sales/index.php');
+        } catch (Throwable $e) {
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            $error = 'Could not save return.';
+        }
     }
 }
 
