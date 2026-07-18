@@ -6,6 +6,24 @@ function bill_ensure_schema(PDO $pdo): void
 {
     try {
         $pdo->exec("
+            CREATE TABLE IF NOT EXISTS bill_categories (
+                id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+                category_name VARCHAR(80) NOT NULL,
+                is_active TINYINT(1) NOT NULL DEFAULT 1,
+                sort_order INT NOT NULL DEFAULT 0,
+                created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                PRIMARY KEY (id),
+                UNIQUE KEY uq_bill_categories_name (category_name),
+                KEY idx_bill_categories_active (is_active),
+                KEY idx_bill_categories_sort (sort_order)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        ");
+    } catch (Throwable $e) {
+    }
+
+    try {
+        $pdo->exec("
             CREATE TABLE IF NOT EXISTS bill_companies (
                 id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
                 category_name VARCHAR(80) NOT NULL DEFAULT '',
@@ -32,6 +50,7 @@ function bill_ensure_schema(PDO $pdo): void
                 bill_id VARCHAR(80) NOT NULL,
                 customer_name VARCHAR(120) NOT NULL,
                 company_name VARCHAR(120) NOT NULL,
+                category_name VARCHAR(80) NULL,
                 bill_amount DECIMAL(12,2) NOT NULL DEFAULT 0.00,
                 service_charge DECIMAL(12,2) NOT NULL DEFAULT 0.00,
                 total_received DECIMAL(12,2) NOT NULL DEFAULT 0.00,
@@ -46,6 +65,7 @@ function bill_ensure_schema(PDO $pdo): void
                 collected_wallet_txn_id BIGINT UNSIGNED NULL,
                 paid_wallet_txn_id BIGINT UNSIGNED NULL,
                 paid_at DATETIME NULL,
+                paid_by VARCHAR(120) NULL,
                 created_by INT UNSIGNED NULL,
                 created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -66,10 +86,55 @@ function bill_ensure_schema(PDO $pdo): void
     } catch (Throwable $e) {
     }
 
+    try {
+        $pdo->exec("
+            CREATE TABLE IF NOT EXISTS bill_payment_history (
+                id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+                payment_group_id VARCHAR(80) NOT NULL,
+                payment_date DATE NOT NULL,
+                total_amount DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+                paid_from_type VARCHAR(30) NOT NULL,
+                paid_from_account_id BIGINT UNSIGNED NULL,
+                paid_wallet_txn_id BIGINT UNSIGNED NULL,
+                paid_by VARCHAR(120) NULL,
+                notes VARCHAR(255) NULL,
+                created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (id),
+                UNIQUE KEY uq_bill_payment_history_group (payment_group_id),
+                KEY idx_bill_payment_history_date (payment_date),
+                KEY idx_bill_payment_history_type (paid_from_type),
+                KEY idx_bill_payment_history_account (paid_from_account_id),
+                KEY idx_bill_payment_history_wallet (paid_wallet_txn_id)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        ");
+    } catch (Throwable $e) {
+    }
+
+    try {
+        $pdo->exec("
+            CREATE TABLE IF NOT EXISTS bill_payment_history_items (
+                id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+                history_id BIGINT UNSIGNED NOT NULL,
+                bill_payment_id BIGINT UNSIGNED NOT NULL,
+                bill_id VARCHAR(80) NOT NULL,
+                company_name VARCHAR(120) NOT NULL,
+                category_name VARCHAR(80) NULL,
+                bill_amount DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+                created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (id),
+                KEY idx_bill_payment_history_items_history (history_id),
+                KEY idx_bill_payment_history_items_bill (bill_payment_id),
+                KEY idx_bill_payment_history_items_bill_id (bill_id)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        ");
+    } catch (Throwable $e) {
+    }
+
     $columns = [
         'bill_id' => "ALTER TABLE bill_payments ADD COLUMN bill_id VARCHAR(80) NOT NULL AFTER id",
         'customer_name' => "ALTER TABLE bill_payments ADD COLUMN customer_name VARCHAR(120) NOT NULL AFTER bill_id",
         'company_name' => "ALTER TABLE bill_payments ADD COLUMN company_name VARCHAR(120) NOT NULL AFTER customer_name",
+        'category_name' => "ALTER TABLE bill_payments ADD COLUMN category_name VARCHAR(80) NULL AFTER company_name",
         'bill_amount' => "ALTER TABLE bill_payments ADD COLUMN bill_amount DECIMAL(12,2) NOT NULL DEFAULT 0.00 AFTER company_name",
         'service_charge' => "ALTER TABLE bill_payments ADD COLUMN service_charge DECIMAL(12,2) NOT NULL DEFAULT 0.00 AFTER bill_amount",
         'total_received' => "ALTER TABLE bill_payments ADD COLUMN total_received DECIMAL(12,2) NOT NULL DEFAULT 0.00 AFTER service_charge",
@@ -84,6 +149,7 @@ function bill_ensure_schema(PDO $pdo): void
         'collected_wallet_txn_id' => "ALTER TABLE bill_payments ADD COLUMN collected_wallet_txn_id BIGINT UNSIGNED NULL AFTER notes",
         'paid_wallet_txn_id' => "ALTER TABLE bill_payments ADD COLUMN paid_wallet_txn_id BIGINT UNSIGNED NULL AFTER collected_wallet_txn_id",
         'paid_at' => "ALTER TABLE bill_payments ADD COLUMN paid_at DATETIME NULL AFTER paid_wallet_txn_id",
+        'paid_by' => "ALTER TABLE bill_payments ADD COLUMN paid_by VARCHAR(120) NULL AFTER paid_at",
         'created_by' => "ALTER TABLE bill_payments ADD COLUMN created_by INT UNSIGNED NULL AFTER paid_at",
         'updated_at' => "ALTER TABLE bill_payments ADD COLUMN updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP AFTER created_at",
     ];
@@ -103,6 +169,7 @@ function bill_ensure_schema(PDO $pdo): void
         "ALTER TABLE bill_payments ADD KEY idx_bill_payments_payment_date (payment_date)",
         "ALTER TABLE bill_payments ADD KEY idx_bill_payments_due_date (due_date)",
         "ALTER TABLE bill_payments ADD KEY idx_bill_payments_company_name (company_name)",
+        "ALTER TABLE bill_payments ADD KEY idx_bill_payments_category_name (category_name)",
         "ALTER TABLE bill_payments ADD KEY idx_bill_payments_received_in_type (received_in_type)",
         "ALTER TABLE bill_payments ADD KEY idx_bill_payments_received_in_account (received_in_account_id)",
         "ALTER TABLE bill_payments ADD KEY idx_bill_payments_status (status)",
@@ -153,6 +220,22 @@ function bill_ensure_schema(PDO $pdo): void
         }
     }
 
+    foreach (bill_default_categories() as $index => $categoryName) {
+        try {
+            $stmt = $pdo->prepare("
+                INSERT INTO bill_categories (category_name, is_active, sort_order)
+                VALUES (:category_name, 1, :sort_order)
+                ON DUPLICATE KEY UPDATE
+                    is_active = 1
+            ");
+            $stmt->execute([
+                ':category_name' => $categoryName,
+                ':sort_order' => $index + 1,
+            ]);
+        } catch (Throwable $e) {
+        }
+    }
+
     foreach (bill_default_companies() as $index => $company) {
         try {
             $stmt = $pdo->prepare("
@@ -172,6 +255,32 @@ function bill_ensure_schema(PDO $pdo): void
         } catch (Throwable $e) {
         }
     }
+
+    try {
+        $pdo->exec("
+            UPDATE bill_payments bp
+            LEFT JOIN bill_companies bc ON bc.company_name = bp.company_name
+            SET bp.category_name = bc.category_name
+            WHERE (bp.category_name IS NULL OR bp.category_name = '')
+              AND bc.category_name IS NOT NULL
+              AND bc.category_name <> ''
+        ");
+    } catch (Throwable $e) {
+    }
+}
+
+function bill_default_categories(): array
+{
+    return [
+        'Electricity',
+        'Gas',
+        'Water',
+        'Internet',
+        'Mobile',
+        'PTCL',
+        'Government',
+        'Others',
+    ];
 }
 
 function bill_default_companies(): array
@@ -182,6 +291,49 @@ function bill_default_companies(): array
         ['category_name' => 'Water', 'company_name' => 'Karachi Water and Sewerage Board', 'short_code' => 'KWSB'],
         ['category_name' => 'Water', 'company_name' => 'City District Government Karachi', 'short_code' => 'CDGK/KMC'],
     ];
+}
+
+function bill_category_rows(PDO $pdo, bool $onlyActive = true): array
+{
+    $where = $onlyActive ? 'WHERE is_active = 1' : '';
+    try {
+        $stmt = $pdo->query("
+            SELECT id, category_name, is_active, sort_order
+            FROM bill_categories
+            {$where}
+            ORDER BY sort_order ASC, category_name ASC, id ASC
+        ");
+        return $stmt->fetchAll();
+    } catch (Throwable $e) {
+        return [];
+    }
+}
+
+function bill_category_find(PDO $pdo, int $id): ?array
+{
+    if ($id <= 0) {
+        return null;
+    }
+    try {
+        $stmt = $pdo->prepare("
+            SELECT id, category_name, is_active, sort_order
+            FROM bill_categories
+            WHERE id = :id
+            LIMIT 1
+        ");
+        $stmt->execute([':id' => $id]);
+        $row = $stmt->fetch();
+        return is_array($row) ? $row : null;
+    } catch (Throwable $e) {
+        return null;
+    }
+}
+
+function bill_category_names(PDO $pdo): array
+{
+    return array_values(array_filter(array_map(static function (array $row): string {
+        return trim((string) ($row['category_name'] ?? ''));
+    }, bill_category_rows($pdo, true))));
 }
 
 function bill_cash_account_id(PDO $pdo): int
@@ -247,6 +399,11 @@ function bill_generate_id(): string
     return 'BILL-' . date('Ymd-His');
 }
 
+function bill_generate_payment_group_id(): string
+{
+    return 'BILLPAY-' . date('YmdHis') . '-' . random_int(1000, 9999);
+}
+
 function bill_insert_collection_txn(PDO $pdo, string $receivedInType, ?int $receivedAccountId, string $billId, string $customerName, string $companyName, string $paymentDate, float $totalReceived, float $serviceCharge, ?string $notes = null): ?int
 {
     $receivedInType = trim($receivedInType);
@@ -304,6 +461,36 @@ function bill_insert_payment_txn(PDO $pdo, string $paidFromType, ?int $paidFromA
         ':account_amount' => $billAmount,
         ':entry_context' => $paidFromType === 'cash' ? 'external' : 'bill_payment_online',
         ':remarks' => 'Bill Paid #' . $billId . ' [' . bill_method_label($paidFromType) . '] - ' . $companyName . ($notes !== null && trim($notes) !== '' ? ' - ' . trim($notes) : ''),
+    ]);
+    return (int) $pdo->lastInsertId();
+}
+
+function bill_insert_bulk_payment_txn(PDO $pdo, string $paidFromType, ?int $paidFromAccountId, string $paymentGroupId, string $paidDate, float $billAmount, string $billSummary, ?string $notes = null): ?int
+{
+    $paidFromType = trim($paidFromType);
+    if ($paidFromType === '' || $paidFromType === 'other') {
+        return null;
+    }
+    $accountId = bill_account_id_for_method($pdo, $paidFromType, (int) ($paidFromAccountId ?? 0));
+    if ($accountId === null || $accountId <= 0) {
+        throw new RuntimeException('Please select a valid payment account.');
+    }
+
+    $stmt = $pdo->prepare("
+        INSERT INTO wallet_transactions
+            (account_id, date, customer_name, number, transaction_id, type, amount, charges, commission_method, account_amount, payment_status, completed_at, entry_context, remarks)
+        VALUES
+            (:account_id, :date, :customer_name, NULL, :transaction_id, 'sending', :txn_amount, 0, 'separate_cash', :account_amount, 'completed', NOW(), :entry_context, :remarks)
+    ");
+    $stmt->execute([
+        ':account_id' => $accountId,
+        ':date' => $paidDate,
+        ':customer_name' => 'Bill Payment Batch',
+        ':transaction_id' => $paymentGroupId,
+        ':txn_amount' => $billAmount,
+        ':account_amount' => $billAmount,
+        ':entry_context' => $paidFromType === 'cash' ? 'external' : 'bill_payment_online',
+        ':remarks' => 'Bill Payment Batch #' . $paymentGroupId . ' [' . bill_method_label($paidFromType) . '] - ' . $billSummary . ($notes !== null && trim($notes) !== '' ? ' - ' . trim($notes) : ''),
     ]);
     return (int) $pdo->lastInsertId();
 }
@@ -426,11 +613,21 @@ function bill_list(PDO $pdo, array $filters = [], int $limit = 300): array
                recv_acc.account_name AS received_in_account_name,
                recv_acc.account_type AS received_in_account_type,
                paid_acc.account_name AS paid_from_account_name,
-               paid_acc.account_type AS paid_from_account_type
+               paid_acc.account_type AS paid_from_account_type,
+               latest_hist.payment_group_id AS latest_payment_group_id
         FROM bill_payments bp
         LEFT JOIN admins a ON a.id = bp.created_by
         LEFT JOIN accounts recv_acc ON recv_acc.id = bp.received_in_account_id
         LEFT JOIN accounts paid_acc ON paid_acc.id = bp.paid_from_account_id
+        LEFT JOIN (
+            SELECT h1.*
+            FROM bill_payment_history h1
+            INNER JOIN (
+                SELECT MAX(id) AS max_id, paid_wallet_txn_id
+                FROM bill_payment_history
+                GROUP BY paid_wallet_txn_id
+            ) hx ON hx.max_id = h1.id
+        ) latest_hist ON latest_hist.paid_wallet_txn_id = bp.paid_wallet_txn_id
         {$where}
         ORDER BY bp.payment_date DESC, bp.id DESC
         LIMIT {$limit}
@@ -499,4 +696,102 @@ function bill_current_overview(PDO $pdo): array
         'pending_amount' => (float) ($summary['pending_amount'] ?? 0),
         'pending_count' => (int) ($summary['pending_count'] ?? 0),
     ];
+}
+
+function bill_payment_history(PDO $pdo, array $billIds = []): array
+{
+    $params = [];
+    $where = '';
+    if ($billIds) {
+        $placeholders = implode(',', array_fill(0, count($billIds), '?'));
+        $where = "WHERE i.bill_payment_id IN ({$placeholders})";
+        $params = array_map('intval', $billIds);
+    }
+
+    try {
+        $stmt = $pdo->prepare("
+            SELECT
+                h.id AS history_id,
+                h.payment_group_id,
+                h.payment_date,
+                h.total_amount,
+                h.paid_from_type,
+                h.paid_from_account_id,
+                h.paid_wallet_txn_id,
+                h.paid_by,
+                h.notes,
+                h.created_at,
+                a.account_name,
+                i.bill_payment_id,
+                i.bill_id,
+                i.company_name,
+                i.category_name,
+                i.bill_amount
+            FROM bill_payment_history h
+            JOIN bill_payment_history_items i ON i.history_id = h.id
+            LEFT JOIN accounts a ON a.id = h.paid_from_account_id
+            {$where}
+            ORDER BY h.created_at DESC, h.id DESC, i.id ASC
+        ");
+        $stmt->execute($params);
+        $rows = $stmt->fetchAll();
+    } catch (Throwable $e) {
+        return [];
+    }
+
+    $history = [];
+    foreach ($rows as $row) {
+        $historyId = (int) ($row['history_id'] ?? 0);
+        if ($historyId <= 0) {
+            continue;
+        }
+        if (!isset($history[$historyId])) {
+            $history[$historyId] = [
+                'history_id' => $historyId,
+                'payment_group_id' => (string) ($row['payment_group_id'] ?? ''),
+                'payment_date' => (string) ($row['payment_date'] ?? ''),
+                'total_amount' => (float) ($row['total_amount'] ?? 0),
+                'paid_from_type' => (string) ($row['paid_from_type'] ?? ''),
+                'paid_from_account_id' => (int) ($row['paid_from_account_id'] ?? 0),
+                'paid_wallet_txn_id' => (int) ($row['paid_wallet_txn_id'] ?? 0),
+                'paid_by' => (string) ($row['paid_by'] ?? ''),
+                'notes' => (string) ($row['notes'] ?? ''),
+                'created_at' => (string) ($row['created_at'] ?? ''),
+                'account_name' => (string) ($row['account_name'] ?? ''),
+                'items' => [],
+            ];
+        }
+        $history[$historyId]['items'][] = [
+            'bill_payment_id' => (int) ($row['bill_payment_id'] ?? 0),
+            'bill_id' => (string) ($row['bill_id'] ?? ''),
+            'company_name' => (string) ($row['company_name'] ?? ''),
+            'category_name' => (string) ($row['category_name'] ?? ''),
+            'bill_amount' => (float) ($row['bill_amount'] ?? 0),
+        ];
+    }
+
+    return array_values($history);
+}
+
+function bill_payment_history_map(PDO $pdo, array $billIds): array
+{
+    $billIds = array_values(array_filter(array_map('intval', $billIds), static fn (int $id): bool => $id > 0));
+    if (!$billIds) {
+        return [];
+    }
+    $historyRows = bill_payment_history($pdo, $billIds);
+    $map = [];
+    foreach ($historyRows as $historyRow) {
+        foreach (($historyRow['items'] ?? []) as $item) {
+            $billPaymentId = (int) ($item['bill_payment_id'] ?? 0);
+            if ($billPaymentId <= 0) {
+                continue;
+            }
+            if (!isset($map[$billPaymentId])) {
+                $map[$billPaymentId] = [];
+            }
+            $map[$billPaymentId][] = $historyRow;
+        }
+    }
+    return $map;
 }
