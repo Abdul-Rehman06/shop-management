@@ -217,7 +217,7 @@ $pendingReceivables = [
         WHERE type = 'receiving' AND payment_status = 'pending'
     ")->fetchColumn(),
 ];
-$actualShopCash = $expectedCash - (float) ($billPendingOverview['pending_amount'] ?? 0);
+$actualShopCash = $expectedCash;
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = trim((string) ($_POST['action'] ?? ''));
@@ -436,7 +436,7 @@ require_once __DIR__ . '/../includes/sidebar.php';
         <div class="p-3 bg-light rounded-4 border-start border-info border-4 h-100 transition-all hover-lift">
             <div class="text-muted small fw-medium mb-1 text-uppercase tracking-wider">Actual Shop Cash</div>
             <div class="h4 mb-0 font-bold text-info"><?= h(number_format($actualShopCash, 2)) ?></div>
-            <div class="small text-muted mt-1">Cash in hand, pending excluded</div>
+            <div class="small text-muted mt-1">Cash in hand based on actual cash movements</div>
         </div>
     </div>
     <div class="col-12 col-md-3">
@@ -521,8 +521,8 @@ require_once __DIR__ . '/../includes/sidebar.php';
                             <td class="px-3 py-3 border-0 border-bottom text-end font-medium text-success">+ <?= h(number_format($commissionEarned, 2)) ?></td>
                         </tr>
                         <tr class="transition-all hover-bg-light">
-                            <td class="px-3 py-3 border-0 border-bottom text-gray-700">Pending Bills (Liability)</td>
-                            <td class="px-3 py-3 border-0 border-bottom text-end font-medium text-warning">- <?= h(number_format((float) ($billPendingOverview['pending_amount'] ?? 0), 2)) ?></td>
+                            <td class="px-3 py-3 border-0 border-bottom text-gray-700">Pending Bills (Info Only)</td>
+                            <td class="px-3 py-3 border-0 border-bottom text-end font-medium text-warning"><?= h(number_format((float) ($billPendingOverview['pending_amount'] ?? 0), 2)) ?></td>
                         </tr>
                         <tr class="transition-all hover-bg-light">
                             <td class="px-3 py-3 border-0 border-bottom text-gray-700">Pending Receivables</td>
