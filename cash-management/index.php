@@ -199,7 +199,7 @@ $expensesTotal = expenses_total($pdo, $date);
 $dealerPayments = dealer_payments_total($pdo, $date);
 $commissionEarned = wallet_commission_total($pdo, $date);
 
-$cashReceivedTotal = $walletCashReceived + $salesTotal + $loadSales + $udharRecovery + $creditAdvance + $nonCashSending;
+$cashReceivedTotal = $walletCashReceived + $salesTotal + $loadSales + $udharRecovery + $creditAdvance + $nonCashSending + $commissionEarned;
 $cashSentTotal = $walletCashSent + $expensesTotal + $dealerPayments + $nonCashReceiving;
 $expectedCash = $openingCash + $cashReceivedTotal - $cashSentTotal;
 $billPendingOverview = bill_current_overview($pdo);
@@ -312,7 +312,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $expensesTotal = expenses_total($pdo, $countDate);
         $dealerPayments = dealer_payments_total($pdo, $countDate);
 
-        $cashReceivedTotal = $walletCashReceived + $salesTotal + $loadSales + $udharRecovery + $creditAdvance + $nonCashSending;
+        $commissionEarned = wallet_commission_total($pdo, $countDate);
+        $cashReceivedTotal = $walletCashReceived + $salesTotal + $loadSales + $udharRecovery + $creditAdvance + $nonCashSending + $commissionEarned;
         $cashSentTotal = $walletCashSent + $expensesTotal + $dealerPayments + $nonCashReceiving;
         $expectedCash = $openingCash + $cashReceivedTotal - $cashSentTotal;
 

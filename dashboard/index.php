@@ -81,6 +81,50 @@ function account_type_label(string $type): string
     };
 }
 
+function account_sort_rank(array $account): array
+{
+    $type = strtolower(trim((string) ($account['account_type'] ?? '')));
+    $name = strtolower(trim((string) ($account['account_name'] ?? '')));
+
+    if ($type === 'bank') {
+        $priority = str_contains($name, 'ubl') ? 1 : (str_contains($name, 'alfalah') ? 2 : 9);
+        return [1, $priority, $name];
+    }
+    if ($type === 'easypaisa') {
+        $priority = str_contains($name, '1') ? 1 : (str_contains($name, '2') ? 2 : 9);
+        return [2, $priority, $name];
+    }
+    if ($type === 'jazzcash') {
+        $priority = str_contains($name, '1') ? 1 : (str_contains($name, '2') ? 2 : 9);
+        return [3, $priority, $name];
+    }
+    if ($type === 'cash') {
+        return [4, 99, $name];
+    }
+    return [5, 99, $name];
+}
+
+function alphabet_serial(int $index): string
+{
+    return chr(65 + $index);
+}
+
+function wallet_commission_range(PDO $pdo, string $from, string $to): float
+{
+    $stmt = $pdo->prepare("
+        SELECT COALESCE(SUM(charges), 0)
+        FROM wallet_transactions
+        WHERE date >= :from_date
+          AND date <= :to_date
+          AND (
+                (type = 'receiving' AND payment_status = 'completed')
+                OR (type = 'sending' AND payment_status = 'completed')
+          )
+    ");
+    $stmt->execute([':from_date' => $from, ':to_date' => $to]);
+    return (float) $stmt->fetchColumn();
+}
+
 function wallet_open_for(PDO $pdo, int $accountId, string $date): float
 {
     $stmt = $pdo->prepare("SELECT amount FROM wallet_transactions WHERE account_id = :id AND date = :date AND type = 'opening' ORDER BY id DESC LIMIT 1");
@@ -202,6 +246,7 @@ function cash_period(PDO $pdo, string $from, string $to): array
     ");
     $stmt->execute([':from_date' => $from, ':to_date' => $to]);
     $walletSent = (float) $stmt->fetchColumn();
+    $walletCommission = wallet_commission_range($pdo, $from, $to);
 
     $stmt = $pdo->prepare("SELECT COALESCE(SUM(quantity * sale_price), 0) FROM sales WHERE created_at >= :from_dt AND created_at <= :to_dt");
     $stmt->execute([':from_dt' => $from . ' 00:00:00', ':to_dt' => $to . ' 23:59:59']);
@@ -238,10 +283,10 @@ function cash_period(PDO $pdo, string $from, string $to): array
     $stmt->execute([':from_date' => $from, ':to_date' => $to]);
     $dealerPayments = (float) $stmt->fetchColumn();
 
-    $received = $walletReceived + $salesCash + $loadCash + $udharCash + $creditCash + non_cash_sum($pdo, $from, $to, 'sending');
+    $received = $walletReceived + $salesCash + $loadCash + $udharCash + $creditCash + non_cash_sum($pdo, $from, $to, 'sending') + $walletCommission;
     $sent = $walletSent + $expenses + $dealerPayments + non_cash_sum($pdo, $from, $to, 'receiving');
 
-    return ['opening' => $opening, 'received' => $received, 'sent' => $sent, 'closing' => $opening + $received - $sent];
+    return ['opening' => $opening, 'received' => $received, 'sent' => $sent, 'closing' => $opening + $received - $sent, 'commission' => $walletCommission];
 }
 
 function load_opening(PDO $pdo, string $network, string $date): float
@@ -375,8 +420,8 @@ function period_metrics(PDO $pdo, string $from, string $to, bool $canViewProfit)
         + (float) ($wallet['jazzcash']['commission'] ?? 0)
         + (float) ($wallet['easypaisa']['commission'] ?? 0);
     $billCommission = (float) ($billSummary['service_charge'] ?? 0);
-    $commission = $walletCommission + $billCommission;
-    $totalProfit = $salesProfit + ($canViewProfit ? (float) ($load['profit_total'] ?? 0) : 0.0) + $commission;
+    $serviceCommission = $walletCommission + $billCommission + ($canViewProfit ? (float) ($load['profit_total'] ?? 0) : 0.0);
+    $overallBusinessProfit = $salesProfit + $serviceCommission;
 
     return [
         'sales_count' => (int) ($sales['sales_count'] ?? 0),
@@ -394,13 +439,22 @@ function period_metrics(PDO $pdo, string $from, string $to, bool $canViewProfit)
         'load_purchased' => (float) ($load['purchased_total'] ?? 0),
         'load_sold' => (float) ($load['sold_total'] ?? 0),
         'load_profit' => $canViewProfit ? (float) ($load['profit_total'] ?? 0) : 0.0,
-        'cash_received' => (float) ($wallet['cash']['received'] ?? 0) + $salesAmount + (float) ($load['sold_total'] ?? 0) + $cashUdhar + $creditAdvance,
+        'cash_received' => (float) ($wallet['cash']['received'] ?? 0) + $salesAmount + (float) ($load['sold_total'] ?? 0) + $cashUdhar + $creditAdvance + $walletCommission,
         'online_received' => (float) ($wallet['bank']['received'] ?? 0) + (float) ($wallet['jazzcash']['received'] ?? 0) + (float) ($wallet['easypaisa']['received'] ?? 0),
         'sending' => (float) ($wallet['cash']['sent'] ?? 0) + (float) ($wallet['bank']['sent'] ?? 0) + (float) ($wallet['jazzcash']['sent'] ?? 0) + (float) ($wallet['easypaisa']['sent'] ?? 0),
+        'bank_received' => (float) ($wallet['bank']['received'] ?? 0),
+        'bank_sent' => (float) ($wallet['bank']['sent'] ?? 0),
+        'jazzcash_received' => (float) ($wallet['jazzcash']['received'] ?? 0),
+        'jazzcash_sent' => (float) ($wallet['jazzcash']['sent'] ?? 0),
+        'easypaisa_received' => (float) ($wallet['easypaisa']['received'] ?? 0),
+        'easypaisa_sent' => (float) ($wallet['easypaisa']['sent'] ?? 0),
+        'wallet_received_total' => (float) ($wallet['jazzcash']['received'] ?? 0) + (float) ($wallet['easypaisa']['received'] ?? 0),
+        'wallet_sent_total' => (float) ($wallet['jazzcash']['sent'] ?? 0) + (float) ($wallet['easypaisa']['sent'] ?? 0),
         'wallet_commission' => $walletCommission,
-        'commission' => $commission,
-        'total_profit' => $totalProfit,
-        'net_profit' => $totalProfit - $expenses,
+        'commission' => $serviceCommission,
+        'accessories_profit' => $salesProfit,
+        'overall_business_profit' => $overallBusinessProfit,
+        'net_profit' => $overallBusinessProfit - $expenses,
         'pending_count' => (int) ($wallet['cash']['pending_count'] ?? 0) + (int) ($wallet['bank']['pending_count'] ?? 0) + (int) ($wallet['jazzcash']['pending_count'] ?? 0) + (int) ($wallet['easypaisa']['pending_count'] ?? 0),
         'pending_amount' => (float) ($wallet['cash']['pending_amount'] ?? 0) + (float) ($wallet['bank']['pending_amount'] ?? 0) + (float) ($wallet['jazzcash']['pending_amount'] ?? 0) + (float) ($wallet['easypaisa']['pending_amount'] ?? 0),
     ];
@@ -584,8 +638,11 @@ $billPending = bill_current_overview($pdo);
 $udharPending = udhar_outstanding($pdo);
 $dealerPending = dealer_outstanding($pdo);
 
-$stmt = $pdo->query("SELECT id, account_name, account_type FROM accounts WHERE status = 'active' ORDER BY FIELD(account_type, 'cash', 'bank', 'jazzcash', 'easypaisa'), account_name ASC");
+$stmt = $pdo->query("SELECT id, account_name, account_type FROM accounts WHERE status = 'active'");
 $accounts = $stmt->fetchAll();
+usort($accounts, static function (array $a, array $b): int {
+    return account_sort_rank($a) <=> account_sort_rank($b);
+});
 $todayAccounts = [];
 $monthAccounts = [];
 $live = ['cash' => 0.0, 'bank' => 0.0, 'jazzcash' => 0.0, 'easypaisa' => 0.0];
@@ -621,11 +678,12 @@ foreach ($accounts as $account) {
 }
 
 $currentBusinessValue = $live['cash'] + $live['bank'] + $live['jazzcash'] + $live['easypaisa'] + (float) $monthLoad['totals']['remaining'] + (float) ($inventory['purchase_value'] ?? 0);
+$selectedBusinessGrowth = $selected['overall_business_profit'] - $selected['expenses'];
 $yesterdayBusinessValue = $currentBusinessValue - $todayMetrics['net_profit'];
-$monthStartBusinessValue = $currentBusinessValue - $monthMetrics['net_profit'];
+$selectedStartBusinessValue = $currentBusinessValue - $selectedBusinessGrowth;
 $todayGrowth = $todayMetrics['net_profit'];
 $monthGrowth = $monthMetrics['net_profit'];
-$profitPct = $selected['sales_amount'] > 0 ? ($selected['net_profit'] / $selected['sales_amount']) * 100 : 0.0;
+$profitPct = $selected['sales_amount'] > 0 ? ($selected['overall_business_profit'] / $selected['sales_amount']) * 100 : 0.0;
 $expensePct = $selected['sales_amount'] > 0 ? ($selected['expenses'] / $selected['sales_amount']) * 100 : 0.0;
 $salesGrowth = growth_pct($selected['sales_amount'], $previous['sales_amount']);
 $loadGrowth = growth_pct($selected['load_sold'], $previous['load_sold']);
@@ -708,10 +766,11 @@ require_once __DIR__ . '/../includes/sidebar.php';
         <?php
         $selectedCards = [
             ['label' => 'Sales', 'value' => 'Rs ' . money($selected['sales_amount']), 'hint' => $rangeLabel],
-            ['label' => 'Net Profit', 'value' => 'Rs ' . money($selected['net_profit']), 'hint' => 'Includes commission'],
-            ['label' => 'Commission', 'value' => 'Rs ' . money($selected['commission']), 'hint' => 'Wallet + bill service'],
+            ['label' => 'Accessories Profit', 'value' => 'Rs ' . money($selected['accessories_profit']), 'hint' => 'Products only'],
+            ['label' => 'Wallet Commission', 'value' => 'Rs ' . money($selected['commission']), 'hint' => 'Wallet + bill + load service'],
+            ['label' => 'Overall Business Profit', 'value' => 'Rs ' . money($selected['overall_business_profit']), 'hint' => 'Accessories + wallet services'],
             ['label' => 'Cash Received', 'value' => 'Rs ' . money($selected['cash_received']), 'hint' => 'Cash drawer inflow'],
-            ['label' => 'Online Received', 'value' => 'Rs ' . money($selected['online_received']), 'hint' => 'Bank + wallets'],
+            ['label' => 'Online Received', 'value' => 'Rs ' . money($selected['online_received']), 'hint' => 'Bank + JazzCash + EasyPaisa'],
             ['label' => 'Sending', 'value' => 'Rs ' . money($selected['sending']), 'hint' => 'Total wallet outflow'],
         ];
         foreach ($selectedCards as $card):
@@ -734,17 +793,24 @@ require_once __DIR__ . '/../includes/sidebar.php';
     <div class="row g-3">
         <?php
         $todayCards = [
-            ['label' => 'Total Sales', 'value' => $todayMetrics['sales_amount']],
-            ['label' => 'Total Cash Received', 'value' => $todayMetrics['cash_received']],
-            ['label' => 'Total Online Received', 'value' => $todayMetrics['online_received']],
-            ['label' => 'Total Sending', 'value' => $todayMetrics['sending']],
+            ['label' => 'Accessories Sales', 'value' => $todayMetrics['sales_amount']],
+            ['label' => 'Bank Receiving', 'value' => $todayMetrics['bank_received']],
+            ['label' => 'Bank Sending', 'value' => $todayMetrics['bank_sent']],
+            ['label' => 'JazzCash Receiving', 'value' => $todayMetrics['jazzcash_received']],
+            ['label' => 'JazzCash Sending', 'value' => $todayMetrics['jazzcash_sent']],
+            ['label' => 'EasyPaisa Receiving', 'value' => $todayMetrics['easypaisa_received']],
+            ['label' => 'EasyPaisa Sending', 'value' => $todayMetrics['easypaisa_sent']],
+            ['label' => 'Total Wallet Receiving', 'value' => $todayMetrics['wallet_received_total']],
+            ['label' => 'Total Wallet Sending', 'value' => $todayMetrics['wallet_sent_total']],
             ['label' => 'Total Expenses', 'value' => $todayMetrics['expenses']],
             ['label' => 'Total Bills Paid', 'value' => $todayMetrics['bills_paid']],
+            ['label' => 'Total Pending Bills', 'value' => (float) ($billPending['pending_amount'] ?? 0)],
             ['label' => 'Total Dealer Payments', 'value' => $todayMetrics['dealer_payments']],
             ['label' => 'Total Udhar Given', 'value' => $todayMetrics['udhar_given']],
             ['label' => 'Total Udhar Recovered', 'value' => $todayMetrics['udhar_recovered']],
-            ['label' => 'Today Commission', 'value' => $todayMetrics['commission']],
-            ['label' => 'Total Profit (Today)', 'value' => $todayMetrics['net_profit']],
+            ['label' => 'Wallet Commission', 'value' => $todayMetrics['commission']],
+            ['label' => 'Accessories Profit', 'value' => $todayMetrics['accessories_profit']],
+            ['label' => 'Overall Business Profit', 'value' => $todayMetrics['overall_business_profit']],
         ];
         foreach ($todayCards as $card):
         ?>
@@ -778,7 +844,7 @@ require_once __DIR__ . '/../includes/sidebar.php';
                             </tr>
                         <?php endforeach; ?>
                         <tr class="fw-bold">
-                            <td>Total</td>
+                            <td>Grand Total</td>
                             <td class="text-end">Rs <?= h(money($todayTotals['received'])) ?></td>
                             <td class="text-end">Rs <?= h(money($todayTotals['sent'])) ?></td>
                             <td class="text-end">Rs <?= h(money($todayTotals['closing'])) ?></td>
@@ -786,6 +852,7 @@ require_once __DIR__ . '/../includes/sidebar.php';
                         </tbody>
                     </table>
                 </div>
+                <div class="text-end small text-muted mt-3">Total Balance: Rs <?= h(money($todayTotals['closing'])) ?></div>
             </div>
         </div>
     </div>
@@ -795,10 +862,11 @@ require_once __DIR__ . '/../includes/sidebar.php';
                 <h2 class="h5 mb-3">Mobile Load Summary (Today)</h2>
                 <div class="table-responsive">
                     <table class="table align-middle mb-0">
-                        <thead><tr><th>Network</th><th class="text-end">Opening</th><th class="text-end">Purchased</th><th class="text-end">Sold</th><th class="text-end">Remaining</th></tr></thead>
+                        <thead><tr><th>S.No</th><th>Network</th><th class="text-end">Opening</th><th class="text-end">Purchased</th><th class="text-end">Sold</th><th class="text-end">Remaining</th></tr></thead>
                         <tbody>
-                        <?php foreach ($todayLoad['rows'] as $row): ?>
+                        <?php foreach ($todayLoad['rows'] as $index => $row): ?>
                             <tr>
+                                <td><?= h(alphabet_serial((int) $index)) ?></td>
                                 <td><?= h((string) $row['network']) ?></td>
                                 <td class="text-end"><?= h(money((float) $row['opening'])) ?></td>
                                 <td class="text-end"><?= h(money((float) $row['purchased'])) ?></td>
@@ -807,6 +875,7 @@ require_once __DIR__ . '/../includes/sidebar.php';
                             </tr>
                         <?php endforeach; ?>
                         <tr class="fw-bold">
+                            <td></td>
                             <td>Total</td>
                             <td class="text-end"><?= h(money((float) $todayLoad['totals']['opening'])) ?></td>
                             <td class="text-end"><?= h(money((float) $todayLoad['totals']['purchased'])) ?></td>
@@ -829,8 +898,9 @@ require_once __DIR__ . '/../includes/sidebar.php';
             ['label' => 'Products Sold', 'value' => (string) $todayMetrics['sales_qty'], 'prefix' => ''],
             ['label' => 'Sales Amount', 'value' => money($todayMetrics['sales_amount']), 'prefix' => 'Rs '],
             ['label' => 'Cost Of Goods Sold', 'value' => money($todayMetrics['sales_cogs']), 'prefix' => 'Rs '],
-            ['label' => 'Gross Profit', 'value' => money($todayMetrics['sales_gross_profit']), 'prefix' => 'Rs '],
-            ['label' => 'Net Profit', 'value' => money($todayMetrics['net_profit']), 'prefix' => 'Rs '],
+            ['label' => 'Accessories Profit', 'value' => money($todayMetrics['accessories_profit']), 'prefix' => 'Rs '],
+            ['label' => 'Wallet Commission', 'value' => money($todayMetrics['commission']), 'prefix' => 'Rs '],
+            ['label' => 'Overall Business Profit', 'value' => money($todayMetrics['overall_business_profit']), 'prefix' => 'Rs '],
         ];
         foreach ($salesTodayCards as $card):
         ?>
@@ -860,8 +930,9 @@ require_once __DIR__ . '/../includes/sidebar.php';
             ['label' => 'Monthly Cash Received', 'value' => $monthMetrics['cash_received']],
             ['label' => 'Monthly Online Received', 'value' => $monthMetrics['online_received']],
             ['label' => 'Monthly Sending', 'value' => $monthMetrics['sending']],
-            ['label' => 'Monthly Commission', 'value' => $monthMetrics['commission']],
-            ['label' => 'Monthly Profit', 'value' => $monthMetrics['net_profit']],
+            ['label' => 'Monthly Wallet Commission', 'value' => $monthMetrics['commission']],
+            ['label' => 'Monthly Accessories Profit', 'value' => $monthMetrics['accessories_profit']],
+            ['label' => 'Monthly Overall Business Profit', 'value' => $monthMetrics['overall_business_profit']],
         ];
         foreach ($monthCards as $card):
         ?>
@@ -896,7 +967,7 @@ require_once __DIR__ . '/../includes/sidebar.php';
                             </tr>
                         <?php endforeach; ?>
                         <tr class="fw-bold">
-                            <td>Total</td>
+                            <td>Grand Total</td>
                             <td class="text-end">Rs <?= h(money($monthTotals['opening'])) ?></td>
                             <td class="text-end">Rs <?= h(money($monthTotals['received'])) ?></td>
                             <td class="text-end">Rs <?= h(money($monthTotals['sent'])) ?></td>
@@ -905,6 +976,7 @@ require_once __DIR__ . '/../includes/sidebar.php';
                         </tbody>
                     </table>
                 </div>
+                <div class="text-end small text-muted mt-3">Total Balance: Rs <?= h(money($monthTotals['closing'])) ?></div>
             </div>
         </div>
     </div>
@@ -914,10 +986,11 @@ require_once __DIR__ . '/../includes/sidebar.php';
                 <h2 class="h5 mb-3">Monthly Load Summary</h2>
                 <div class="table-responsive">
                     <table class="table align-middle mb-0">
-                        <thead><tr><th>Network</th><th class="text-end">Opening</th><th class="text-end">Purchased</th><th class="text-end">Sold</th><th class="text-end">Remaining</th></tr></thead>
+                        <thead><tr><th>S.No</th><th>Network</th><th class="text-end">Opening</th><th class="text-end">Purchased</th><th class="text-end">Sold</th><th class="text-end">Remaining</th></tr></thead>
                         <tbody>
-                        <?php foreach ($monthLoad['rows'] as $row): ?>
+                        <?php foreach ($monthLoad['rows'] as $index => $row): ?>
                             <tr>
+                                <td><?= h(alphabet_serial((int) $index)) ?></td>
                                 <td><?= h((string) $row['network']) ?></td>
                                 <td class="text-end"><?= h(money((float) $row['opening'])) ?></td>
                                 <td class="text-end"><?= h(money((float) $row['purchased'])) ?></td>
@@ -926,6 +999,7 @@ require_once __DIR__ . '/../includes/sidebar.php';
                             </tr>
                         <?php endforeach; ?>
                         <tr class="fw-bold">
+                            <td></td>
                             <td>Total</td>
                             <td class="text-end"><?= h(money((float) $monthLoad['totals']['opening'])) ?></td>
                             <td class="text-end"><?= h(money((float) $monthLoad['totals']['purchased'])) ?></td>
@@ -944,7 +1018,8 @@ require_once __DIR__ . '/../includes/sidebar.php';
     <div class="col-12 col-xl-8">
         <div class="card border-0 shadow-sm h-100">
             <div class="card-body">
-                <h2 class="h5 mb-3">Business Net Worth</h2>
+                <h2 class="h5 mb-1">Current Business Assets (Live Balance)</h2>
+                <div class="small text-muted mb-3">This section always shows latest live balances, independent of the selected date filter.</div>
                 <div class="row g-3">
                     <?php
                     $worthCards = [
@@ -972,14 +1047,15 @@ require_once __DIR__ . '/../includes/sidebar.php';
     <div class="col-12 col-xl-4">
         <div class="card border-0 shadow-sm h-100">
             <div class="card-body">
-                <h2 class="h5 mb-3">Rolling Business Value</h2>
+                <h2 class="h5 mb-1">Rolling Business Value</h2>
+                <div class="small text-muted mb-3">Movement below follows the selected date filter, while the final business value stays live.</div>
                 <div class="border rounded p-3 mb-3">
-                    <div class="text-muted small">Yesterday Business Value</div>
-                    <div class="h5 mb-0">Rs <?= h(money($yesterdayBusinessValue)) ?></div>
+                    <div class="text-muted small">Business Value At Range Start</div>
+                    <div class="h5 mb-0">Rs <?= h(money($selectedStartBusinessValue)) ?></div>
                 </div>
                 <div class="border rounded p-3 mb-3">
-                    <div class="text-muted small">Today's Business Growth</div>
-                    <div class="h5 mb-0">Rs <?= h(money($todayGrowth)) ?></div>
+                    <div class="text-muted small"><?= h($rangeLabel) ?> Business Growth</div>
+                    <div class="h5 mb-0">Rs <?= h(money($selectedBusinessGrowth)) ?></div>
                 </div>
                 <div class="border rounded p-3">
                     <div class="text-muted small">Current Business Value</div>
@@ -1078,7 +1154,7 @@ const topProductLabels = <?= json_encode($topProductsChart['labels'], JSON_UNESC
 const topProductTotals = <?= json_encode($topProductsChart['totals'], JSON_UNESCAPED_SLASHES) ?>;
 const growthLabels = <?= json_encode($growthLabels, JSON_UNESCAPED_SLASHES) ?>;
 const growthTotals = <?= json_encode($growthTotals, JSON_UNESCAPED_SLASHES) ?>;
-const expenseProfitTotals = <?= json_encode([(float) $selected['expenses'], (float) $selected['total_profit'], (float) $selected['net_profit'], (float) $selected['commission']], JSON_UNESCAPED_SLASHES) ?>;
+const expenseProfitTotals = <?= json_encode([(float) $selected['expenses'], (float) $selected['accessories_profit'], (float) $selected['commission'], (float) $selected['overall_business_profit']], JSON_UNESCAPED_SLASHES) ?>;
 const cashOnlineTotals = <?= json_encode([(float) $selected['cash_received'], (float) $selected['online_received'], (float) $selected['sending']], JSON_UNESCAPED_SLASHES) ?>;
 
 Chart.defaults.color = '#6b7280';
@@ -1098,7 +1174,7 @@ new Chart(document.getElementById('monthlySalesChart'), {
 
 new Chart(document.getElementById('expenseProfitChart'), {
     type: 'bar',
-    data: { labels: ['Expenses', 'Gross Profit', 'Net Profit', 'Commission'], datasets: [{ data: expenseProfitTotals, backgroundColor: ['#ef4444', '#22c55e', '#3b82f6', '#f59e0b'] }] },
+    data: { labels: ['Expenses', 'Accessories Profit', 'Wallet Commission', 'Overall Business Profit'], datasets: [{ data: expenseProfitTotals, backgroundColor: ['#ef4444', '#22c55e', '#f59e0b', '#3b82f6'] }] },
     options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }
 });
 
